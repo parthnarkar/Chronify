@@ -13,4 +13,9 @@ app.use(express.json());
 app.use('/api/folders', folderRoutes);
 app.use('/api/tasks', tasksRoutes);
 
+// Test route
+app.get("/api/health", (req, res) => {
+    res.json({ status: "Server is running ✅" });
+});
+
 export default app;
