@@ -92,9 +92,9 @@ export const deleteFolderWithTasks = async (req, res) => {
 //Delete the folder (but not tasks)
 export const deleteFolderOnly = async (req, res) => {
     try {
-        const { id } = req.body;
+        const { id } = req.params;
 
-        const folder = Folder.findByIdAndDelete(id);
+        const folder = await Folder.findByIdAndDelete(id);
         if (!folder) {
             return res.status(404).json({ message: "Folder not found" });
         }
