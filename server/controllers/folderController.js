@@ -1,6 +1,5 @@
 import Folder from "../models/Folder.js";
 import Tasks from "../models/Tasks.js";
-import Task from "../models/Tasks.js";
 
 //Create a new folder
 export const createFolder = async (req, res) => {
@@ -24,7 +23,7 @@ export const createFolder = async (req, res) => {
 export const getFoldersWithTasks = async (req, res) => {
     try {
         const folders = await Folder.find().lean();
-        const tasks = await Task.find().lean();
+        const tasks = await Tasks.find().lean();
 
         //attach taks to their respective folders
         const data = folders.map(folder => ({
