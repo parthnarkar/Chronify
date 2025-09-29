@@ -1,5 +1,4 @@
 import Tasks from "../models/Tasks.js";
-import Folder from "../models/Folder.js";
 
 //Create a new task
 export const createNewTask = async (req, res) => {
