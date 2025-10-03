@@ -10,6 +10,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// simple request logger to help debug owner header issues
+app.use((req, res, next) => {
+    const owner = req.headers['x-client-uid'] || null
+    if (owner) console.log(`[req] ${req.method} ${req.path} X-Client-Uid=${owner}`)
+    else console.log(`[req] ${req.method} ${req.path} (no X-Client-Uid)`)
+    next()
+})
+
 //routes
 app.use('/api/folders', folderRoutes);
 app.use('/api/tasks', tasksRoutes);

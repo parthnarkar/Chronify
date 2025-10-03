@@ -7,6 +7,12 @@ const folderSchema = new mongoose.Schema(
             required: true,
             trim: true,
         }
+        ,
+        owner: {
+            type: String,
+            required: true,
+            index: true,
+        }
     },
     { timestamps: true }
 );

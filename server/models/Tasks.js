@@ -11,7 +11,7 @@ const taskSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
-        status: {
+        currentStatus: {
             type: String,
             enum: ["pending", "in-progress", "completed"],
             default: "pending",
@@ -23,6 +23,27 @@ const taskSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Folder",
             required: true,
+        }
+        ,
+        owner: {
+            type: String,
+            required: true,
+            index: true,
+        }
+        ,
+        // Track timestamps for each status. These arrays record every time the
+        // task entered the corresponding status (useful for history/analytics).
+        pendingTimestamps: {
+            type: [Date],
+            default: []
+        },
+        inProgressTimestamps: {
+            type: [Date],
+            default: []
+        },
+        completedTimestamps: {
+            type: [Date],
+            default: []
         }
     },
     { timestamps: true }
