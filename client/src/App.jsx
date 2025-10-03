@@ -48,10 +48,13 @@ function AppInner({ mobileOpen, setMobileOpen, folders, tasksByFolder, setFolder
           const ts = await tasksRes.json()
           const map = {}
           ts.forEach(t => {
+            // folder may be populated (object) or an id string
             const fid = t.folder && t.folder._id ? t.folder._id : t.folder
-            const fidId = fid
+            const fidId = fid ? String(fid) : 'unknown'
             if (!map[fidId]) map[fidId] = []
-            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.status, due: t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : '' })
+            // map server fields -> client-friendly fields
+            const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
+            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due })
           })
           setTasksByFolder(map)
         }
@@ -77,8 +80,9 @@ function AppInner({ mobileOpen, setMobileOpen, folders, tasksByFolder, setFolder
         return
       }
       const fs = await res.json()
-      setFolders(fs)
-      if (fs.length) setActiveFolder(fs[0]._id || fs[0].id)
+      const mapped = fs.map(f => ({ id: f._id, name: f.name }))
+      setFolders(mapped)
+      if (mapped.length) setActiveFolder(mapped[0].id)
     } catch (e) {
       console.error('Failed to create folder', e)
     }
@@ -100,7 +104,9 @@ function AppInner({ mobileOpen, setMobileOpen, folders, tasksByFolder, setFolder
         return
       }
       const t = await res.json()
-      setTasksByFolder((prev) => ({ ...prev, [activeFolder]: [...(prev[activeFolder] || []), { id: t._id, title: t.title, description: t.description, status: t.status, due: t.dueDate }] }))
+      // normalize server response into client shape
+      const formattedDue = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
+      setTasksByFolder((prev) => ({ ...prev, [activeFolder]: [...(prev[activeFolder] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due: formattedDue }] }))
     } catch (e) {
       console.error('Failed to create task', e)
     }
@@ -121,7 +127,7 @@ function AppInner({ mobileOpen, setMobileOpen, folders, tasksByFolder, setFolder
       const task = (tasksByFolder[activeFolder] || []).find(x => x.id === id)
       if (!task) return
       const next = task.status === 'completed' ? 'pending' : task.status === 'pending' ? 'in-progress' : 'completed'
-      await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ status: next }) })
+      await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ currentStatus: next }) })
       setTasksByFolder((t) => ({
         ...t,
         [activeFolder]: (t[activeFolder] || []).map((task) => task.id === id ? { ...task, status: next } : task)
