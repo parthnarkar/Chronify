@@ -28,9 +28,9 @@ export const createNewTask = async (req, res) => {
             pendingTimestamps: [],
             completedTimestamps: []
         }
-        const initialStatus = currentStatus || 'pending'
-        if (initialStatus === 'pending') timestamps.pendingTimestamps.push(now)
-        if (initialStatus === 'completed') timestamps.completedTimestamps.push(now)
+        const initialStatus = currentStatus || 'Pending'
+        if (initialStatus === 'Pending') timestamps.pendingTimestamps.push(now)
+        if (initialStatus === 'Completed') timestamps.completedTimestamps.push(now)
 
         const initialPriority = req.body.priority || 'low'
 
@@ -70,7 +70,7 @@ export const updateTask = async (req, res) => {
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
 
         // Validate status if provided
-        const validStatus = ["pending", "completed"];
+        const validStatus = ["Pending", "Completed"];
         if (currentStatus && !validStatus.includes(currentStatus)) {
             return res.status(400).json({ message: "Invalid status value" });
         }
@@ -99,8 +99,8 @@ export const updateTask = async (req, res) => {
         if (currentStatus && currentStatus !== existing.currentStatus) {
             setFields.currentStatus = currentStatus
             const now2 = new Date()
-            if (currentStatus === 'pending') ops.pendingTimestamps = now2
-            if (currentStatus === 'completed') ops.completedTimestamps = now2
+            if (currentStatus === 'Pending') ops.pendingTimestamps = now2
+            if (currentStatus === 'Completed') ops.completedTimestamps = now2
         }
 
         // handle priority change independently of status

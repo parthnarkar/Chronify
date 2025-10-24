@@ -69,7 +69,7 @@ function priorityColor(priority) {
 }
 
 export default function TaskItem({ task, toggleStatus, deleteTask, editTask, changePriority, folderId, animatingTask }) {
-  const isCompleted = task.status === 'completed' || task.currentStatus === 'completed'
+  const isCompleted = task.status === 'Completed' || task.currentStatus === 'Completed'
   
   // Efficient reference variable to identify meeting tasks
   const isMeetingTask = task.metadata?.type === 'meeting'
@@ -77,7 +77,7 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
   const accent = isMeetingTask ? 'bg-blue-600' : priorityColor(task.priority)
   const priorityTextColor = task.priority === 'medium' ? 'text-black' : 'text-white'
   const isAnimatingOut = animatingTask && animatingTask.id === task.id
-  const animDirection = isAnimatingOut && animatingTask.to === 'completed' ? 'translate-x-6' : isAnimatingOut && animatingTask.to === 'pending' ? '-translate-x-6' : 'translate-x-0'
+  const animDirection = isAnimatingOut && animatingTask.to === 'Completed' ? 'translate-x-6' : isAnimatingOut && animatingTask.to === 'Pending' ? '-translate-x-6' : 'translate-x-0'
   const [open, setOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const ref = useRef()
@@ -158,7 +158,7 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
         <div className="flex items-start gap-3 md:gap-4 md:flex-1 min-w-0">
           <div className="flex items-start gap-3 md:gap-4 w-full">
             <input
-              aria-label={`Mark ${task.title} as ${isCompleted ? 'incomplete' : 'completed'}`}
+              aria-label={`Mark ${task.title} as ${isCompleted ? 'incomplete' : 'Completed'}`}
               type="checkbox"
               checked={isCompleted}
               onChange={() => toggleStatus(task.id)}

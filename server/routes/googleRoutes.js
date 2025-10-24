@@ -584,7 +584,7 @@ router.post('/analyze-meetings', async (req, res) => {
                     // NO PRIORITY for meeting tasks - they use date/time instead
                     priority: undefined, // Explicitly set to undefined for meetings
                     dueDate: meetingDateTime, // Use meeting date as due date for sorting
-                    currentStatus: 'pending',
+                    currentStatus: 'Pending',
                     metadata: {
                         emailId: meetingData.emailId,
                         aiGenerated: true,

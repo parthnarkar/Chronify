@@ -80,8 +80,8 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
       return 0
     })
 
-  const pending = allSorted.filter(t => t.status !== 'completed')
-  const completed = allSorted.filter(t => t.status === 'completed')
+  const pending = allSorted.filter(t => t.status !== 'Completed')
+  const completed = allSorted.filter(t => t.status === 'Completed')
 
   return (
     <div className="md:grid md:grid-cols-4 gap-8">

@@ -50,7 +50,7 @@ export default function TaskDetails() {
     if (!task) return
     setSaving(true)
     try {
-      const next = (task.currentStatus || task.status) === 'completed' ? 'pending' : 'completed'
+      const next = (task.currentStatus || task.status) === 'Completed' ? 'Pending' : 'Completed'
       const headers = { 'Content-Type': 'application/json' }
       if (user) headers['X-Client-Uid'] = user.uid
       const res = await fetch(`/api/tasks/${task._id || task.id}`, { method: 'PUT', headers, body: JSON.stringify({ currentStatus: next }) })

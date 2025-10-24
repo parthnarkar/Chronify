@@ -94,7 +94,7 @@ export default function AppContainer() {
             if (!map[fidId]) map[fidId] = []
             // map server fields -> client-friendly fields
             const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
+            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due, priority: t.priority || 'low' })
           })
           setTasksByFolder(map)
         }
@@ -197,7 +197,7 @@ export default function AppContainer() {
           const fidId = fid ? String(fid) : 'unknown'
           if (!map[fidId]) map[fidId] = []
           const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-          map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
+          map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due, priority: t.priority || 'low' })
         })
         setTasksByFolder(map)
       }
@@ -227,7 +227,7 @@ export default function AppContainer() {
       // normalize server response into client shape
       const formattedDue = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
       const folderKey = folderId || activeFolder
-      setTasksByFolder((prev) => ({ ...prev, [folderKey]: [...(prev[folderKey] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due: formattedDue, priority: t.priority || 'low' }] }))
+      setTasksByFolder((prev) => ({ ...prev, [folderKey]: [...(prev[folderKey] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due: formattedDue, priority: t.priority || 'low' }] }))
     } catch (e) {
       console.error('Failed to create task', e)
     }
@@ -250,7 +250,7 @@ export default function AppContainer() {
           next[k] = next[k].filter(t => t.id !== id)
         }
         const formattedDue = updated.dueDate ? (typeof updated.dueDate === 'string' ? updated.dueDate.split('T')[0] : new Date(updated.dueDate).toISOString().split('T')[0]) : ''
-        const newTask = { id: updated._id, title: updated.title, description: updated.description, status: updated.currentStatus || 'pending', due: formattedDue, priority: updated.priority || 'low' }
+        const newTask = { id: updated._id, title: updated.title, description: updated.description, status: updated.currentStatus || 'Pending', due: formattedDue, priority: updated.priority || 'low' }
         next[newFolderKey] = [...(next[newFolderKey] || []), newTask]
         return next
       })
@@ -392,7 +392,7 @@ export default function AppContainer() {
             const fidId = fid ? String(fid) : 'unknown'
             if (!map[fidId]) map[fidId] = []
             const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
+            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due, priority: t.priority || 'low' })
           })
           setTasksByFolder(map)
         }
@@ -444,7 +444,7 @@ export default function AppContainer() {
         }
       }
       if (!task) return
-      const next = task.status === 'completed' ? 'pending' : 'completed'
+      const next = task.status === 'Completed' ? 'Pending' : 'Completed'
 
       // request server update
       const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ currentStatus: next }) })
@@ -464,7 +464,7 @@ export default function AppContainer() {
           return nextMap
         })
         setAnimatingTask(null)
-        if (next === 'completed') {
+        if (next === 'Completed') {
           setShowConfetti(true)
           setTimeout(() => setShowConfetti(false), 1200)
         }
