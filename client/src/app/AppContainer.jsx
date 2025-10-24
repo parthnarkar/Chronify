@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Navbar from '../components/Navbar'
 import Dashboard from '../pages/Dashboard'
 import Profile from '../pages/Profile'
+import TaskDetails from '../pages/TaskDetails'
 import CreateTaskModal from '../components/CreateTaskModal'
 import CreateFolderModal from '../components/CreateFolderModal'
 import { Routes, Route, useLocation } from 'react-router-dom'
@@ -483,6 +484,7 @@ export default function AppContainer() {
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
           <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} onAIAnalysis={handleAIAnalysis} aiAnalysisData={aiAnalysisData} /></PrivateRoute>} />
+          <Route path="/:taskId" element={<PrivateRoute><TaskDetails /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
         <CreateTaskModal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditingTask(null) }} onCreate={handleCreateTask} onUpdate={handleUpdateTask} initial={editingTask} folders={folders} activeFolder={activeFolder} />
