@@ -1,0 +1,45 @@
+[dotenv@17.2.2] injecting env (2) from .env -- tip: 📡 auto-backup env with Radar: https://dotenvx.com/radar
+[GoogleSyncService] Cron job scheduled for every 30 minutes
+[dotenv@17.2.2] injecting env (0) from .env -- tip: 🔐 encrypt with Dotenvx: https://dotenvx.com
+Initializing Google Sync Service...
+Server is running on port 5000
+Google Sync Service is running with auto-sync every 30 minutes
+MongoDB Connected: ac-cswqu8i-shard-00-01.vtztzkf.mongodb.net
+[GoogleSyncService] Starting scheduled sync...
+[GoogleSyncService] Found 1 users to sync
+[GoogleSyncService] Failed to sync user parthnarkarofficial@gmail.com: MongoServerError: Updating the path 'syncErrors' would create a conflict at 'syncErrors'
+    at Connection.sendCommand (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/cmap/connection.js:305:27)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Connection.command (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/cmap/connection.js:333:26)
+    at async Server.command (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/sdam/server.js:171:29)
+    at async FindOneAndUpdateOperation.executeCommand (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/operations/command.js:76:16)
+    at async FindOneAndUpdateOperation.execute (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/operations/find_and_modify.js:85:24)
+    at async tryOperation (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/operations/execute_operation.js:207:20)
+    at async executeOperation (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/operations/execute_operation.js:75:16)
+    at async Collection.findOneAndUpdate (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/node_modules/mongodb/lib/collection.js:500:16)
+    at async model.Query._findOneAndUpdate (/home/parthnarkar/Desktop/Projects/Chronify/server/node_modules/mongoose/lib/query.js:3536:13) {
+  errorLabelSet: Set(0) {},
+  errorResponse: {
+    ok: 0,
+    errmsg: "Updating the path 'syncErrors' would create a conflict at 'syncErrors'",
+    code: 40,
+    codeName: 'ConflictingUpdateOperators',
+    '$clusterTime': {
+      clusterTime: new Timestamp({ t: 1761291001, i: 3 }),
+      signature: [Object]
+    },
+    operationTime: new Timestamp({ t: 1761291001, i: 3 })
+  },
+  ok: 0,
+  code: 40,
+  codeName: 'ConflictingUpdateOperators',
+  '$clusterTime': {
+    clusterTime: new Timestamp({ t: 1761291001, i: 3 }),
+    signature: {
+      hash: Binary.createFromBase64('Z39sJ96kq3+ShFtTWSFz/wZOuxE=', 0),
+      keyId: new Long('7506197228050972678')
+    }
+  },
+  operationTime: new Timestamp({ t: 1761291001, i: 3 })
+}
+[GoogleSyncService] Sync completed: 1 successful, 0 failed

@@ -3,6 +3,7 @@ import cors from 'cors';
 import folderRoutes from './routes/folderRoutes.js';
 import tasksRoutes from './routes/tasksRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import googleRoutes from './routes/googleRoutes.js';
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use((req, res, next) => {
 app.use('/api/folders', folderRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api', authRoutes);
+app.use('/api/google', googleRoutes);
 
 // Avatar proxy to avoid blocked third-party image/resource issues in dev
 // Example: GET /api/avatar?u=<encoded image url>

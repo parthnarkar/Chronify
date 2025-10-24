@@ -26,8 +26,8 @@ export default function FolderList({ folders, tasksByFolder, activeFolder, setAc
           {folders.map((f) => (
             <div key={f.id} className={`w-full text-left px-3 py-2 rounded-md flex items-center justify-between hover:bg-gray-50 ${activeFolder === f.id ? 'bg-gray-50 border-l-2 border-blue-400' : ''}`}>
               <button onClick={() => { setActiveFolder(f.id); setMobileOpen(false) }} className="flex-1 text-left flex items-center gap-3 cursor-pointer">
-                {f.icon && typeof f.icon === 'string' && f.icon.trim().startsWith('<svg') ? (
-                  <span className="w-5 h-5" dangerouslySetInnerHTML={{ __html: f.icon }} />
+                {f.icon && typeof f.icon === 'string' && (f.icon.includes('<svg') || f.icon.includes('&lt;svg')) ? (
+                  <span className="w-5 h-5 flex items-center justify-center" dangerouslySetInnerHTML={{ __html: f.icon }} />
                 ) : (
                   <span className="text-xl">{f.icon || '📁'}</span>
                 )}

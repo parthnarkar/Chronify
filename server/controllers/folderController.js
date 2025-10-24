@@ -35,9 +35,8 @@ export const getFoldersWithTasks = async (req, res) => {
 
         // Ensure the 'All Tasks' default folder exists for every user
         let hasAll = folders.some(f => f.name === 'All Tasks')
-        // star SVG used as default icon
-        const starSvg = `<?xml version="1.0" encoding="utf-8"?>
-<svg width="20" height="20" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">\n  <path d="M923.2 429.6H608l-97.6-304-97.6 304H97.6l256 185.6L256 917.6l256-187.2 256 187.2-100.8-302.4z" fill="#FAD97F" />\n  <path d="M1024 396H633.6L512 21.6 390.4 396H0l315.2 230.4-121.6 374.4L512 770.4l316.8 232L707.2 628 1024 396zM512 730.4l-256 187.2 97.6-302.4-256-185.6h315.2l97.6-304 97.6 304h315.2l-256 185.6L768 917.6l-256-187.2z" fill="" />\n</svg>`
+        // star SVG used as default icon (clean format without XML declaration)
+        const starSvg = `<svg width="20" height="20" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M923.2 429.6H608l-97.6-304-97.6 304H97.6l256 185.6L256 917.6l256-187.2 256 187.2-100.8-302.4z" fill="#FAD97F" /><path d="M1024 396H633.6L512 21.6 390.4 396H0l315.2 230.4-121.6 374.4L512 770.4l316.8 232L707.2 628 1024 396zM512 730.4l-256 187.2 97.6-302.4-256-185.6h315.2l97.6-304 97.6 304h315.2l-256 185.6L768 917.6l-256-187.2z" fill="" /></svg>`
 
         if (!hasAll) {
             const created = new Folder({ name: 'All Tasks', owner, icon: starSvg });

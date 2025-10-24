@@ -69,7 +69,35 @@ export default function Login() {
     setIsSubmitting(true)
     try {
       const provider = new GoogleAuthProvider()
-      await signInWithPopup(auth, provider)
+      // Request additional OAuth scopes for Gmail and Calendar access
+      provider.addScope('https://www.googleapis.com/auth/gmail.readonly')
+      provider.addScope('https://www.googleapis.com/auth/calendar.readonly')
+      
+      const result = await signInWithPopup(auth, provider)
+      
+      // Get the OAuth access token for API calls
+      const credential = GoogleAuthProvider.credentialFromResult(result)
+      const accessToken = credential?.accessToken
+      
+      if (accessToken) {
+        // Send the access token to backend for storing/connecting Google services
+        try {
+          await fetch('/api/google/connect', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Client-Uid': result.user.uid
+            },
+            body: JSON.stringify({ 
+              accessToken,
+              email: result.user.email 
+            })
+          })
+        } catch (connectErr) {
+          console.warn('Failed to connect Google services, but login succeeded:', connectErr)
+        }
+      }
+      
       // Successful sign-in via Google — navigate to dashboard
       navigate('/')
     } catch (err) {

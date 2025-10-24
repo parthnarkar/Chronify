@@ -20,14 +20,22 @@ export default function AppContainer() {
   const [editingFolder, setEditingFolder] = useState(null)
   const [animatingTask, setAnimatingTask] = useState(null)
   const [showConfetti, setShowConfetti] = useState(false)
+  
+  // Google sync state
+  const [syncData, setSyncData] = useState({ 
+    connected: false, 
+    events: [], 
+    mails: [], 
+    lastSynced: null,
+    syncing: false 
+  })
 
   const location = useLocation()
   const { user, token } = useAuth()
 
   // Fallback star SVG (same art used server-side). If a folder has an SVG icon string
   // it will be rendered as markup in FolderList; otherwise we display emoji.
-  const STAR_SVG = `<?xml version="1.0" encoding="utf-8"?>
-<svg width="20" height="20" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">\n  <path d="M923.2 429.6H608l-97.6-304-97.6 304H97.6l256 185.6L256 917.6l256-187.2 256 187.2-100.8-302.4z" fill="#FAD97F" />\n  <path d="M1024 396H633.6L512 21.6 390.4 396H0l315.2 230.4-121.6 374.4L512 770.4l316.8 232L707.2 628 1024 396zM512 730.4l-256 187.2 97.6-302.4-256-185.6h315.2l97.6-304 97.6 304h315.2l-256 185.6L768 917.6l-256-187.2z" fill="" />\n</svg>`
+  const STAR_SVG = `<svg width="20" height="20" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M923.2 429.6H608l-97.6-304-97.6 304H97.6l256 185.6L256 917.6l256-187.2 256 187.2-100.8-302.4z" fill="#FAD97F" /><path d="M1024 396H633.6L512 21.6 390.4 396H0l315.2 230.4-121.6 374.4L512 770.4l316.8 232L707.2 628 1024 396zM512 730.4l-256 187.2 97.6-302.4-256-185.6h315.2l97.6-304 97.6 304h315.2l-256 185.6L768 917.6l-256-187.2z" fill="" /></svg>`
 
   function mapAndSortFolders(raw) {
     const mapped = raw.map(f => ({ id: f._id, name: f.name, icon: f.icon || (f.name === 'All Tasks' ? STAR_SVG : '📁') }))
@@ -54,9 +62,10 @@ export default function AppContainer() {
       try {
         const uid = user.uid
         const headers = { 'Content-Type': 'application/json', 'X-Client-Uid': uid }
-        const [foldersRes, tasksRes] = await Promise.all([
+        const [foldersRes, tasksRes, syncRes] = await Promise.all([
           fetch('/api/folders', { headers }),
           fetch('/api/tasks', { headers }),
+          fetch('/api/google/status', { headers }),
         ])
         if (foldersRes.ok) {
           const raw = await foldersRes.json()
@@ -77,6 +86,10 @@ export default function AppContainer() {
             map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
           })
           setTasksByFolder(map)
+        }
+        if (syncRes.ok) {
+          const syncData = await syncRes.json()
+          setSyncData(prev => ({ ...prev, ...syncData }))
         }
       } catch (e) {
         console.error('Failed to load user data', e)
@@ -259,6 +272,62 @@ export default function AppContainer() {
     }
   }
 
+  // Google sync functionality
+  async function handleGoogleSync() {
+    if (!user) return
+    
+    setSyncData(prev => ({ ...prev, syncing: true }))
+    
+    try {
+      const headers = { 'Content-Type': 'application/json', 'X-Client-Uid': user.uid }
+      const res = await fetch('/api/google/sync', { 
+        method: 'POST', 
+        headers 
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        setSyncData(prev => ({
+          ...prev,
+          events: data.events || [],
+          mails: data.mails || [],
+          lastSynced: data.lastSynced,
+          connected: true,
+          syncing: false,
+          error: null
+        }))
+      } else {
+        const errorData = await res.json().catch(() => ({}))
+        const errorMessage = errorData.message || `Sync failed with status ${res.status}`
+        
+        console.warn('Sync failed:', res.status, errorMessage)
+        
+        // Handle token expiry specifically
+        if (res.status === 401 && errorMessage.includes('expired')) {
+          setSyncData(prev => ({ 
+            ...prev, 
+            syncing: false, 
+            connected: false,
+            error: 'Access token expired. Please sign in with Google again to reconnect.' 
+          }))
+        } else {
+          setSyncData(prev => ({ 
+            ...prev, 
+            syncing: false,
+            error: errorMessage
+          }))
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync Google data', e)
+      setSyncData(prev => ({ 
+        ...prev, 
+        syncing: false,
+        error: 'Network error. Please try again.'
+      }))
+    }
+  }
+
   async function deleteTask(id) {
     if (!confirm('Delete this task?')) return
     try {
@@ -325,7 +394,7 @@ export default function AppContainer() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
         <CreateTaskModal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditingTask(null) }} onCreate={handleCreateTask} onUpdate={handleUpdateTask} initial={editingTask} folders={folders} activeFolder={activeFolder} />
