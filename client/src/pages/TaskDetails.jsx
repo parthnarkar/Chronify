@@ -109,13 +109,6 @@ export default function TaskDetails() {
             <p className="text-sm text-gray-800">{task.metadata?.type || '—'}</p>
           </div>
         </div>
-
-        {task.metadata && (
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold mb-2">Metadata</h3>
-            <pre className="bg-gray-50 p-3 rounded text-xs text-gray-700 overflow-auto">{JSON.stringify(task.metadata, null, 2)}</pre>
-          </div>
-        )}
       </section>
     </div>
   )
