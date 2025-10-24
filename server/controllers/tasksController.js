@@ -17,7 +17,7 @@ export const createNewTask = async (req, res) => {
 
         // ensure the folder exists and belongs to this owner
         const Folder = (await import('../models/Folder.js')).default
-        const folderDoc = await Folder.findOne({ _id: folder, owner })
+        const folderDoc = await Folder.findOne({ _id: folder, owner, deletedAt: null })
         if (!folderDoc) {
             return res.status(404).json({ message: 'Folder not found for this user' })
         }
@@ -48,12 +48,13 @@ export const createNewTask = async (req, res) => {
 //Get all tasks (with folder info)
 export const getAllTasks = async (req, res) => {
     try {
-        const owner = req.headers['x-client-uid'] || null
-        if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
-        console.log(`[tasksController] getAllTasks owner=${owner}`)
+    const owner = req.headers['x-client-uid'] || null
+    if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
+    console.log(`[tasksController] getAllTasks owner=${owner}`)
 
-        const tasks = await Tasks.find({ owner }).populate("folder", "name"); //populate folder name
-        res.json(tasks);
+    // only return non-deleted tasks
+    const tasks = await Tasks.find({ owner, deletedAt: null }).populate("folder", "name"); //populate folder name
+    res.json(tasks);
     }
     catch (error) {
         console.error('[tasksController] getAllTasks error', error)
@@ -75,8 +76,15 @@ export const updateTask = async (req, res) => {
         }
 
         // If status is changing, append a timestamp to the corresponding array
-        const existing = await Tasks.findOne({ _id: req.params.id, owner })
-        if (!existing) return res.status(404).json({ message: 'Task not found' })
+    const existing = await Tasks.findOne({ _id: req.params.id, owner, deletedAt: null })
+    if (!existing) return res.status(404).json({ message: 'Task not found' })
+
+        // if folder is being changed, validate it exists and belongs to user
+        if (folder) {
+            const Folder = (await import('../models/Folder.js')).default
+            const folderDoc2 = await Folder.findOne({ _id: folder, owner, deletedAt: null })
+            if (!folderDoc2) return res.status(404).json({ message: 'Target folder not found for this user' })
+        }
 
         const setFields = { title, description, dueDate, folder }
         const ops = {}
@@ -91,7 +99,7 @@ export const updateTask = async (req, res) => {
         const updateObj = { $set: setFields, ...(ops.$push ? { $push: ops.$push } : {}) }
 
         const task = await Tasks.findOneAndUpdate(
-            { _id: req.params.id, owner },
+            { _id: req.params.id, owner, deletedAt: null },
             updateObj,
             { new: true, runValidators: true } // ensures enum validation
         );
@@ -112,10 +120,11 @@ export const deleteTask = async (req, res) => {
         const owner = req.headers['x-client-uid'] || null
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
 
-        const task = await Tasks.findOneAndDelete({ _id: req.params.id, owner });
-        if (!task) return res.status(404).json({ message: "Task not found" });
+    // soft-delete the task by setting deletedAt
+    const task = await Tasks.findOneAndUpdate({ _id: req.params.id, owner, deletedAt: null }, { $set: { deletedAt: new Date() } }, { new: true });
+    if (!task) return res.status(404).json({ message: "Task not found" });
 
-        res.json({ message: "Task deleted" });
+    res.json({ message: "Task deleted (soft)" });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

@@ -13,6 +13,12 @@ const folderSchema = new mongoose.Schema(
             required: true,
             index: true,
         }
+        ,
+        // Soft-delete timestamp. When set, the folder is considered deleted.
+        deletedAt: {
+            type: Date,
+            default: null,
+        }
     },
     { timestamps: true }
 );

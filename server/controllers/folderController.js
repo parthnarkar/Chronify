@@ -29,8 +29,18 @@ export const getFoldersWithTasks = async (req, res) => {
         const owner = req.headers['x-client-uid'] || null
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
 
-        const folders = await Folder.find({ owner }).lean();
-        const tasks = await Tasks.find({ owner }).lean();
+        // only return non-deleted folders and tasks
+        let folders = await Folder.find({ owner, deletedAt: null }).lean();
+        let tasks = await Tasks.find({ owner, deletedAt: null }).lean();
+
+        // If the user has no folders yet, create a default "Important" folder
+        if (!folders || folders.length === 0) {
+            const created = new Folder({ name: 'Important', owner });
+            await created.save();
+            // re-query folders and tasks
+            folders = await Folder.find({ owner, deletedAt: null }).lean();
+            tasks = await Tasks.find({ owner, deletedAt: null }).lean();
+        }
 
         //attach taks to their respective folders
         const data = folders.map(folder => ({
@@ -82,18 +92,18 @@ export const deleteFolderWithTasks = async (req, res) => {
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
 
         //first checking the folder
-    const folder = await Folder.findOne({ _id: id, owner });
+        //first checking the folder
+        const folder = await Folder.findOne({ _id: id, owner, deletedAt: null });
         if (!folder) {
             return res.status(404).json({ message: "Folder not found" });
         }
 
-        //Delete all the tasks in it
-    await Tasks.deleteMany({ folder: id, owner });
+        // Soft-delete: mark tasks in the folder as deleted and mark the folder deleted
+        const now = new Date()
+        await Tasks.updateMany({ folder: id, owner, deletedAt: null }, { $set: { deletedAt: now } });
+        await Folder.findOneAndUpdate({ _id: id, owner }, { $set: { deletedAt: now } });
 
-        //Deleting the Folder
-        await Folder.findByIdAndDelete(id);
-
-        res.status(200).json({ message: "Folder and its tasks deleted successfully" });
+        res.status(200).json({ message: "Folder and its tasks deleted (soft) successfully" });
     } catch (error) {
         res.status(500).json({ message: "Internal server error" });
     }
@@ -105,12 +115,13 @@ export const deleteFolderOnly = async (req, res) => {
         const { id } = req.params;
         const owner = req.headers['x-client-uid'] || null
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
-        const folder = await Folder.findOneAndDelete({ _id: id, owner });
+        const folder = await Folder.findOne({ _id: id, owner, deletedAt: null });
         if (!folder) {
             return res.status(404).json({ message: "Folder not found" });
         }
-
-        res.json({ message: "Folder deleted successfully" });
+        const now = new Date()
+        await Folder.findOneAndUpdate({ _id: id, owner }, { $set: { deletedAt: now } });
+        res.json({ message: "Folder deleted (soft) successfully" });
     } catch (error) {
         res.status(500).json({ message: "Internal server error" });
     }

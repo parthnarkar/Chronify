@@ -31,6 +31,12 @@ const taskSchema = new mongoose.Schema(
             index: true,
         }
         ,
+        // Soft-delete timestamp. When set, the task is considered deleted.
+        deletedAt: {
+            type: Date,
+            default: null,
+        }
+        ,
         // Track timestamps for each status. These arrays record every time the
         // task entered the corresponding status (useful for history/analytics).
         pendingTimestamps: {
