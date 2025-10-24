@@ -13,7 +13,7 @@ const taskSchema = new mongoose.Schema(
         },
         currentStatus: {
             type: String,
-            enum: ["pending", "in-progress", "completed"],
+            enum: ["pending", "completed"],
             default: "pending",
         },
         // Priority of the task
@@ -49,12 +49,14 @@ const taskSchema = new mongoose.Schema(
             type: [Date],
             default: []
         },
-        inProgressTimestamps: {
-            type: [Date],
-            default: []
-        },
         completedTimestamps: {
             type: [Date],
+            default: []
+        }
+        ,
+        // Track priority change history as an array of priority names (e.g. ['low','medium'])
+        priorityHistory: {
+            type: [String],
             default: []
         }
     },

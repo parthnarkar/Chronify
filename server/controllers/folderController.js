@@ -33,13 +33,30 @@ export const getFoldersWithTasks = async (req, res) => {
         let folders = await Folder.find({ owner, deletedAt: null }).lean();
         let tasks = await Tasks.find({ owner, deletedAt: null }).lean();
 
-        // If the user has no folders yet, create a default "Important" folder
-        if (!folders || folders.length === 0) {
-            const created = new Folder({ name: 'Important', owner });
+        // Ensure the 'All Tasks' default folder exists for every user
+        let hasAll = folders.some(f => f.name === 'All Tasks')
+        // star SVG used as default icon
+        const starSvg = `<?xml version="1.0" encoding="utf-8"?>
+<svg width="20" height="20" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">\n  <path d="M923.2 429.6H608l-97.6-304-97.6 304H97.6l256 185.6L256 917.6l256-187.2 256 187.2-100.8-302.4z" fill="#FAD97F" />\n  <path d="M1024 396H633.6L512 21.6 390.4 396H0l315.2 230.4-121.6 374.4L512 770.4l316.8 232L707.2 628 1024 396zM512 730.4l-256 187.2 97.6-302.4-256-185.6h315.2l97.6-304 97.6 304h315.2l-256 185.6L768 917.6l-256-187.2z" fill="" />\n</svg>`
+
+        if (!hasAll) {
+            const created = new Folder({ name: 'All Tasks', owner, icon: starSvg });
             await created.save();
-            // re-query folders and tasks
+            // re-query folders and tasks after creating default
             folders = await Folder.find({ owner, deletedAt: null }).lean();
             tasks = await Tasks.find({ owner, deletedAt: null }).lean();
+            hasAll = true
+        }
+
+        // If 'All Tasks' exists but has no icon set, update it to use the star SVG so
+        // existing users see the star by default (persisted in DB).
+        if (hasAll) {
+            const allFolder = folders.find(f => f.name === 'All Tasks')
+            if (allFolder && (!allFolder.icon || allFolder.icon === '')) {
+                await Folder.findOneAndUpdate({ _id: allFolder._id, owner }, { $set: { icon: starSvg } })
+                // refresh folders after update
+                folders = await Folder.find({ owner, deletedAt: null }).lean();
+            }
         }
 
         //attach taks to their respective folders
@@ -55,21 +72,26 @@ export const getFoldersWithTasks = async (req, res) => {
     }
 };
 
-//Update the Folder Details
+//Update the Folder Details (supports updating name and/or icon)
 export const updateFolderDetails = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name } = req.body;
+        const { name, icon } = req.body;
         const owner = req.headers['x-client-uid'] || null
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
 
-        if (!name) {
-            res.status(400).json({ message: "Folder name is required" });
+        // Require at least one updatable field
+        if (!name && typeof icon === 'undefined') {
+            return res.status(400).json({ message: "Provide at least one field to update (name or icon)" });
         }
+
+        const update = {}
+        if (name) update.name = name
+        if (typeof icon !== 'undefined') update.icon = icon
 
         const folder = await Folder.findOneAndUpdate(
             { _id: id, owner },
-            { name },
+            update,
             { new: true }
         )
 
@@ -80,6 +102,7 @@ export const updateFolderDetails = async (req, res) => {
         res.json(folder);
 
     } catch (error) {
+        console.error('[folderController] updateFolderDetails error', error)
         res.status(500).json({ message: "Internal server error" });
     }
 };

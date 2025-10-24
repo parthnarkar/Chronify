@@ -17,9 +17,36 @@ export default function AppContainer() {
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [showFolderModal, setShowFolderModal] = useState(false)
   const [editingTask, setEditingTask] = useState(null)
+  const [editingFolder, setEditingFolder] = useState(null)
+  const [animatingTask, setAnimatingTask] = useState(null)
+  const [showConfetti, setShowConfetti] = useState(false)
 
   const location = useLocation()
   const { user, token } = useAuth()
+
+  // Fallback star SVG (same art used server-side). If a folder has an SVG icon string
+  // it will be rendered as markup in FolderList; otherwise we display emoji.
+  const STAR_SVG = `<?xml version="1.0" encoding="utf-8"?>
+<svg width="20" height="20" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">\n  <path d="M923.2 429.6H608l-97.6-304-97.6 304H97.6l256 185.6L256 917.6l256-187.2 256 187.2-100.8-302.4z" fill="#FAD97F" />\n  <path d="M1024 396H633.6L512 21.6 390.4 396H0l315.2 230.4-121.6 374.4L512 770.4l316.8 232L707.2 628 1024 396zM512 730.4l-256 187.2 97.6-302.4-256-185.6h315.2l97.6-304 97.6 304h315.2l-256 185.6L768 917.6l-256-187.2z" fill="" />\n</svg>`
+
+  function mapAndSortFolders(raw) {
+    const mapped = raw.map(f => ({ id: f._id, name: f.name, icon: f.icon || (f.name === 'All Tasks' ? STAR_SVG : '📁') }))
+    // Put 'All Tasks' at the top, keep others alphabetical
+    mapped.sort((a, b) => {
+      if (a.name === 'All Tasks' && b.name !== 'All Tasks') return -1
+      if (b.name === 'All Tasks' && a.name !== 'All Tasks') return 1
+      return a.name.localeCompare(b.name)
+    })
+    return mapped
+  }
+  // Simple confetti overlay: a centered emoji that pulses when a task is completed
+  function ConfettiOverlay() {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-50">
+        <div className="text-6xl animate-pulse">🎉</div>
+      </div>
+    )
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -33,7 +60,7 @@ export default function AppContainer() {
         ])
         if (foldersRes.ok) {
           const raw = await foldersRes.json()
-          const fs = raw.map(f => ({ id: f._id, name: f.name, icon: f.icon || '📁' }))
+          const fs = mapAndSortFolders(raw)
           setFolders(fs)
           if (fs.length) setActiveFolder(fs[0].id)
         }
@@ -60,6 +87,8 @@ export default function AppContainer() {
 
   // open folder modal
   function addFolder() {
+    // ensure we're not in edit mode when creating a new folder
+    setEditingFolder(null)
     setShowFolderModal(true)
   }
 
@@ -75,12 +104,81 @@ export default function AppContainer() {
         console.warn('Reload folders failed', res.status)
         return
       }
-      const fs = await res.json()
-      const mapped = fs.map(f => ({ id: f._id, name: f.name, icon: f.icon }))
-      setFolders(mapped)
-      if (mapped.length) setActiveFolder(mapped[0].id)
+  const fs = await res.json()
+  const mapped = mapAndSortFolders(fs)
+  setFolders(mapped)
+  if (mapped.length) setActiveFolder(mapped[0].id)
     } catch (e) {
       console.error('Failed to create folder', e)
+    }
+  }
+
+  function openEditFolder(folder) {
+    setEditingFolder({ id: folder.id, name: folder.name, icon: folder.icon })
+    setShowFolderModal(true)
+  }
+
+  async function handleUpdateFolder({ id, name, icon }) {
+    try {
+      const res = await fetch(`/api/folders/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ name, icon }) })
+      if (!res.ok) {
+        console.warn('Update folder failed', res.status)
+        return
+      }
+      const updated = await res.json()
+      // refresh folders
+      const foldersRes = await fetch('/api/folders', { headers: { 'X-Client-Uid': user?.uid } })
+      if (foldersRes.ok) {
+        const raw = await foldersRes.json()
+        const fs = mapAndSortFolders(raw)
+        setFolders(fs)
+        setActiveFolder(updated._id)
+      }
+      setEditingFolder(null)
+      setShowFolderModal(false)
+    } catch (e) {
+      console.error('Failed to update folder', e)
+    }
+  }
+
+  async function handleDeleteFolder(folderId, folderName) {
+    if (folderName === 'All Tasks') {
+      alert('The default "All Tasks" folder cannot be deleted.')
+      return
+    }
+    if (!confirm('Delete folder and its tasks?')) return
+    try {
+      // server exposes two delete endpoints; we want to delete folder and its tasks
+      const res = await fetch(`/api/folders/folder-with-tasks/${folderId}`, { method: 'DELETE', headers: { 'X-Client-Uid': user?.uid } })
+      if (!res.ok) {
+        console.warn('Delete folder failed', res.status)
+        return
+      }
+      // reload folders and tasks
+      const [foldersRes, tasksRes] = await Promise.all([
+        fetch('/api/folders', { headers: { 'X-Client-Uid': user?.uid } }),
+        fetch('/api/tasks', { headers: { 'X-Client-Uid': user?.uid } })
+      ])
+      if (foldersRes.ok) {
+        const raw = await foldersRes.json()
+        const fs = mapAndSortFolders(raw)
+        setFolders(fs)
+        if (fs.length && !fs.find(f => f.id === activeFolder)) setActiveFolder(fs[0].id)
+      }
+      if (tasksRes.ok) {
+        const ts = await tasksRes.json()
+        const map = {}
+        ts.forEach(t => {
+          const fid = t.folder && t.folder._id ? t.folder._id : t.folder
+          const fidId = fid ? String(fid) : 'unknown'
+          if (!map[fidId]) map[fidId] = []
+          const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
+          map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
+        })
+        setTasksByFolder(map)
+      }
+    } catch (e) {
+      console.error('Failed to delete folder', e)
     }
   }
 
@@ -139,6 +237,28 @@ export default function AppContainer() {
     }
   }
 
+  // change priority inline (used by TaskItem dropdown)
+  async function handleChangePriority(id, newPriority) {
+    try {
+      const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ priority: newPriority }) })
+      if (!res.ok) {
+        console.warn('Change priority failed', res.status)
+        return
+      }
+      const updated = await res.json()
+      // update local tasksByFolder keeping task in the same folder
+      setTasksByFolder((prev) => {
+        const next = { ...prev }
+        for (const k of Object.keys(next)) {
+          next[k] = next[k].map(t => t.id === id ? { ...t, priority: updated.priority || t.priority } : t)
+        }
+        return next
+      })
+    } catch (e) {
+      console.error('Failed to change priority', e)
+    }
+  }
+
   async function deleteTask(id) {
     if (!confirm('Delete this task?')) return
     try {
@@ -151,14 +271,46 @@ export default function AppContainer() {
 
   async function toggleStatus(id) {
     try {
-      const task = (tasksByFolder[activeFolder] || []).find(x => x.id === id)
+      // find task in active folder or any folder (to support All Tasks view)
+      let sourceFolder = activeFolder
+      let task = (tasksByFolder[activeFolder] || []).find(x => x.id === id)
+      if (!task) {
+        // search all folders
+        for (const k of Object.keys(tasksByFolder)) {
+          const found = (tasksByFolder[k] || []).find(x => x.id === id)
+          if (found) {
+            task = found
+            sourceFolder = k
+            break
+          }
+        }
+      }
       if (!task) return
-      const next = task.status === 'completed' ? 'pending' : task.status === 'pending' ? 'in-progress' : 'completed'
-      await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ currentStatus: next }) })
-      setTasksByFolder((t) => ({
-        ...t,
-        [activeFolder]: (t[activeFolder] || []).map((task) => task.id === id ? { ...task, status: next } : task)
-      }))
+      const next = task.status === 'completed' ? 'pending' : 'completed'
+
+      // request server update
+      const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ currentStatus: next }) })
+      if (!res.ok) {
+        console.warn('Toggle status failed', res.status)
+        return
+      }
+      const updated = await res.json()
+
+      // play animation: mark animating then update UI after short delay
+      setAnimatingTask({ id, to: next })
+      setTimeout(() => {
+        setTasksByFolder((t) => {
+          const nextMap = { ...t }
+          // remove/replace in sourceFolder
+          nextMap[sourceFolder] = (nextMap[sourceFolder] || []).map((task) => task.id === id ? { ...task, status: updated.currentStatus || next } : task)
+          return nextMap
+        })
+        setAnimatingTask(null)
+        if (next === 'completed') {
+          setShowConfetti(true)
+          setTimeout(() => setShowConfetti(false), 1200)
+        }
+      }, 260)
     } catch (e) {
       console.error('Failed to toggle status', e)
     }
@@ -173,11 +325,12 @@ export default function AppContainer() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} toggleStatus={toggleStatus} deleteTask={deleteTask} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
         <CreateTaskModal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditingTask(null) }} onCreate={handleCreateTask} onUpdate={handleUpdateTask} initial={editingTask} folders={folders} activeFolder={activeFolder} />
-        <CreateFolderModal open={showFolderModal} onClose={() => setShowFolderModal(false)} onCreate={handleCreateFolder} />
+  <CreateFolderModal open={showFolderModal} onClose={() => { setShowFolderModal(false); setEditingFolder(null) }} onCreate={handleCreateFolder} onUpdate={handleUpdateFolder} initial={editingFolder} />
+        {showConfetti && <ConfettiOverlay />}
       </div>
     </div>
   )

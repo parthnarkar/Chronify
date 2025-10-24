@@ -66,7 +66,7 @@ export default function Navbar({ mobileOpen, setMobileOpen }) {
       </div>
       <div className="relative">
         {/* Profile button */}
-        <button onClick={() => setMenuOpen((s) => !s)} className="flex items-center gap-2 p-1 rounded-md hover:bg-gray-50">
+        <button onClick={() => setMenuOpen((s) => !s)} className="flex items-center gap-2 p-1 rounded-md hover:bg-gray-50 cursor-pointer">
           <img src={photoSrc} alt="profile" className="w-10 h-10 rounded-full object-cover" onError={(e)=>{ console.warn('[Navbar] avatar failed to load, falling back', e?.target?.src); e.target.onerror=null; e.target.src='/user-profile.png'}} />
         </button>
 

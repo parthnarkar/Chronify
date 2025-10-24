@@ -3,7 +3,6 @@ import React from 'react'
 export default function StatusPill({ status }) {
   const map = {
     pending: 'bg-gray-100 text-gray-800',
-    'in-progress': 'bg-blue-100 text-blue-700',
     completed: 'bg-green-100 text-green-700',
   }
   const safeStatus = typeof status === 'string' && status.length ? status : 'pending'

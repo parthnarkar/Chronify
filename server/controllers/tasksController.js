@@ -22,19 +22,19 @@ export const createNewTask = async (req, res) => {
             return res.status(404).json({ message: 'Folder not found for this user' })
         }
 
-        // initialize timestamps for the initial status
+        // initialize timestamps for the initial status and priority history
         const now = new Date()
         const timestamps = {
             pendingTimestamps: [],
-            inProgressTimestamps: [],
             completedTimestamps: []
         }
         const initialStatus = currentStatus || 'pending'
         if (initialStatus === 'pending') timestamps.pendingTimestamps.push(now)
-        if (initialStatus === 'in-progress') timestamps.inProgressTimestamps.push(now)
         if (initialStatus === 'completed') timestamps.completedTimestamps.push(now)
 
-    const task = new Tasks({ title, description, currentStatus: initialStatus, dueDate, folder, owner, priority: req.body.priority || 'low', ...timestamps })
+        const initialPriority = req.body.priority || 'low'
+
+    const task = new Tasks({ title, description, currentStatus: initialStatus, dueDate, folder, owner, priority: initialPriority, priorityHistory: [initialPriority], ...timestamps })
         await task.save();
 
         res.status(201).json(task);
@@ -65,17 +65,17 @@ export const getAllTasks = async (req, res) => {
 //Update the Task
 export const updateTask = async (req, res) => {
     try {
-        const { currentStatus, title, description, dueDate, folder } = req.body;
+    const { currentStatus, title, description, dueDate, folder, priority } = req.body;
         const owner = req.headers['x-client-uid'] || null
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
 
         // Validate status if provided
-        const validStatus = ["pending", "in-progress", "completed"];
+        const validStatus = ["pending", "completed"];
         if (currentStatus && !validStatus.includes(currentStatus)) {
             return res.status(400).json({ message: "Invalid status value" });
         }
 
-        // If status is changing, append a timestamp to the corresponding array
+        // Load existing task to compare and append timestamps/history as needed
     const existing = await Tasks.findOne({ _id: req.params.id, owner, deletedAt: null })
     if (!existing) return res.status(404).json({ message: 'Task not found' })
 
@@ -86,19 +86,38 @@ export const updateTask = async (req, res) => {
             if (!folderDoc2) return res.status(404).json({ message: 'Target folder not found for this user' })
         }
 
-        const setFields = { title, description, dueDate, folder }
-        const ops = {}
+        const setFields = {}
+        const ops = { }
+
+        // update simple fields when provided
+        if (typeof title !== 'undefined') setFields.title = title
+        if (typeof description !== 'undefined') setFields.description = description
+        if (typeof dueDate !== 'undefined') setFields.dueDate = dueDate
+        if (typeof folder !== 'undefined') setFields.folder = folder
+
+        // handle status change and timestamp pushes
         if (currentStatus && currentStatus !== existing.currentStatus) {
             setFields.currentStatus = currentStatus
-            // ensure we can also update priority if provided
-            if (req.body.priority) setFields.priority = req.body.priority
-            const now = new Date()
-            if (currentStatus === 'pending') ops.$push = { pendingTimestamps: now }
-            if (currentStatus === 'in-progress') ops.$push = { inProgressTimestamps: now }
-            if (currentStatus === 'completed') ops.$push = { completedTimestamps: now }
+            const now2 = new Date()
+            if (currentStatus === 'pending') ops.pendingTimestamps = now2
+            if (currentStatus === 'completed') ops.completedTimestamps = now2
         }
 
-        const updateObj = { $set: setFields, ...(ops.$push ? { $push: ops.$push } : {}) }
+        // handle priority change independently of status
+        if (typeof priority !== 'undefined' && priority !== existing.priority) {
+            setFields.priority = priority
+            // record the name into priorityHistory (push)
+            ops.priorityHistory = priority
+        }
+
+        // build update object for mongoose
+        const updateObj = { $set: setFields }
+        if (ops.pendingTimestamps || ops.completedTimestamps || ops.priorityHistory) {
+            updateObj.$push = {}
+            if (ops.pendingTimestamps) updateObj.$push.pendingTimestamps = ops.pendingTimestamps
+            if (ops.completedTimestamps) updateObj.$push.completedTimestamps = ops.completedTimestamps
+            if (ops.priorityHistory) updateObj.$push.priorityHistory = ops.priorityHistory
+        }
 
         const task = await Tasks.findOneAndUpdate(
             { _id: req.params.id, owner, deletedAt: null },
