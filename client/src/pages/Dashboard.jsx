@@ -2,8 +2,11 @@ import React from 'react'
 import FolderList from '../components/FolderList'
 import TaskList from '../components/TaskList'
 import IconPlus from '../components/IconPlus'
+import SyncStatusBar from '../components/SyncStatusBar'
+import { usePWA } from '../context/PWAContext'
 
-export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, editFolder, toggleStatus, deleteTask, changePriority, mobileOpen, setMobileOpen, animatingTask, deleteFolder, syncData, onGoogleSync, onAIAnalysis, aiAnalysisData }) {
+export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, editFolder, toggleStatus, deleteTask, changePriority, mobileOpen, setMobileOpen, animatingTask, deleteFolder, syncData, onGoogleSync, onAIAnalysis, aiAnalysisData, isOnline, syncStatus }) {
+  const { forceSync } = usePWA()
   const activeFolderObj = folders.find((x) => x.id === activeFolder)
   let tasks = []
   if (activeFolderObj && activeFolderObj.name === 'All Tasks') {
@@ -103,6 +106,13 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
         </div>
 
         <div className="space-y-6">
+          {/* Sync Status Bar */}
+          <SyncStatusBar 
+            isOnline={isOnline} 
+            syncStatus={syncStatus} 
+            onForceSync={forceSync}
+          />
+
           {/* Google Sync Section */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-3">

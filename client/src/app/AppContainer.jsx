@@ -9,6 +9,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import PrivateRoute from '../components/PrivateRoute'
 import Login from '../components/Login'
 import { useAuth } from '../context/AuthContext'
+import { usePWA } from '../context/PWAContext'
 
 export default function AppContainer() {
   const [folders, setFolders] = useState([])
@@ -42,7 +43,8 @@ export default function AppContainer() {
   })
 
   const location = useLocation()
-  const { user, token } = useAuth()
+  const { user, token, offlineDataService } = useAuth()
+  const { isOnline, syncStatus } = usePWA()
 
   // Fallback star SVG (same art used server-side). If a folder has an SVG icon string
   // it will be rendered as markup in FolderList; otherwise we display emoji.
@@ -69,45 +71,107 @@ export default function AppContainer() {
 
   useEffect(() => {
     async function loadData() {
-      if (!user) return
+      if (!user || !offlineDataService) return
+      
       try {
-        const uid = user.uid
-        const headers = { 'Content-Type': 'application/json', 'X-Client-Uid': uid }
-        const [foldersRes, tasksRes, syncRes] = await Promise.all([
-          fetch('/api/folders', { headers }),
-          fetch('/api/tasks', { headers }),
-          fetch('/api/google/status', { headers }),
-        ])
-        if (foldersRes.ok) {
-          const raw = await foldersRes.json()
-          const fs = mapAndSortFolders(raw)
+        // Load folders from offline storage (will sync in background if online)
+        const foldersResult = await offlineDataService.getFolders()
+        if (foldersResult.success) {
+          const fs = mapAndSortFolders(foldersResult.data)
           setFolders(fs)
-          if (fs.length) setActiveFolder(fs[0].id)
+          if (fs.length && !activeFolder) setActiveFolder(fs[0].id)
         }
-        if (tasksRes.ok) {
-          const ts = await tasksRes.json()
+
+        // Load tasks from offline storage
+        const tasksResult = await offlineDataService.getTasks()
+        if (tasksResult.success) {
+          const tasks = tasksResult.data
           const map = {}
-          ts.forEach(t => {
-            // folder may be populated (object) or an id string
+          tasks.forEach(t => {
             const fid = t.folder && t.folder._id ? t.folder._id : t.folder
             const fidId = fid ? String(fid) : 'unknown'
             if (!map[fidId]) map[fidId] = []
-            // map server fields -> client-friendly fields
+            
+            // Map offline storage fields -> client-friendly fields
             const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due, priority: t.priority || 'low' })
+            map[fidId].push({ 
+              id: t._id, 
+              title: t.title, 
+              description: t.description, 
+              status: t.currentStatus || 'Pending', 
+              due, 
+              priority: t.priority || 'low',
+              metadata: t.metadata || {} 
+            })
           })
           setTasksByFolder(map)
         }
-        if (syncRes.ok) {
-          const syncData = await syncRes.json()
-          setSyncData(prev => ({ ...prev, ...syncData }))
+
+        // Try to load Google sync status if online
+        if (isOnline) {
+          try {
+            const headers = { 'Content-Type': 'application/json', 'X-Client-Uid': user.uid }
+            const syncRes = await fetch('/api/google/status', { headers })
+            if (syncRes.ok) {
+              const syncData = await syncRes.json()
+              setSyncData(prev => ({ ...prev, ...syncData }))
+            }
+          } catch (e) {
+            console.log('Could not fetch Google sync status:', e.message)
+          }
         }
       } catch (e) {
         console.error('Failed to load user data', e)
       }
     }
     loadData()
-  }, [user, token])
+  }, [user, offlineDataService, isOnline, activeFolder])
+
+  // Listen for data changes from offline service
+  useEffect(() => {
+    if (!offlineDataService) return
+
+    const unsubscribeDataChange = offlineDataService.subscribe('data_changed', async (changeInfo) => {
+      console.log('📊 Data changed:', changeInfo)
+      
+      // Refresh folders and tasks when data changes
+      if (changeInfo.type === 'folder') {
+        const foldersResult = await offlineDataService.getFolders()
+        if (foldersResult.success) {
+          const fs = mapAndSortFolders(foldersResult.data)
+          setFolders(fs)
+          if (fs.length && !activeFolder) setActiveFolder(fs[0].id)
+        }
+      }
+      
+      if (changeInfo.type === 'task' || changeInfo.type === 'folder') {
+        const tasksResult = await offlineDataService.getTasks()
+        if (tasksResult.success) {
+          const tasks = tasksResult.data
+          const map = {}
+          tasks.forEach(t => {
+            const fid = t.folder && t.folder._id ? t.folder._id : t.folder
+            const fidId = fid ? String(fid) : 'unknown'
+            if (!map[fidId]) map[fidId] = []
+            
+            const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
+            map[fidId].push({ 
+              id: t._id, 
+              title: t.title, 
+              description: t.description, 
+              status: t.currentStatus || 'Pending', 
+              due, 
+              priority: t.priority || 'low',
+              metadata: t.metadata || {} 
+            })
+          })
+          setTasksByFolder(map)
+        }
+      }
+    })
+
+    return unsubscribeDataChange
+  }, [offlineDataService, activeFolder])
 
   // open folder modal
   function addFolder() {
@@ -118,22 +182,17 @@ export default function AppContainer() {
 
   async function handleCreateFolder({ name, icon }) {
     try {
-      const post = await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ name, icon }) })
-      if (!post.ok) {
-        console.warn('Create folder failed', post.status)
-        return
+      const result = await offlineDataService.createFolder({ name, icon })
+      if (result.success) {
+        console.log(result.offline ? '📱 Folder created offline' : '☁️ Folder created online')
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Create folder failed:', result.error)
+        alert('Failed to create folder: ' + result.error)
       }
-      const res = await fetch('/api/folders', { headers: { 'X-Client-Uid': user?.uid } })
-      if (!res.ok) {
-        console.warn('Reload folders failed', res.status)
-        return
-      }
-  const fs = await res.json()
-  const mapped = mapAndSortFolders(fs)
-  setFolders(mapped)
-  if (mapped.length) setActiveFolder(mapped[0].id)
     } catch (e) {
       console.error('Failed to create folder', e)
+      alert('Failed to create folder: ' + e.message)
     }
   }
 
@@ -144,24 +203,20 @@ export default function AppContainer() {
 
   async function handleUpdateFolder({ id, name, icon }) {
     try {
-      const res = await fetch(`/api/folders/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ name, icon }) })
-      if (!res.ok) {
-        console.warn('Update folder failed', res.status)
-        return
+      const result = await offlineDataService.updateFolder(id, { name, icon })
+      if (result.success) {
+        console.log(result.offline ? '📱 Folder updated offline' : '☁️ Folder updated online')
+        setActiveFolder(id)
+        setEditingFolder(null)
+        setShowFolderModal(false)
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Update folder failed:', result.error)
+        alert('Failed to update folder: ' + result.error)
       }
-      const updated = await res.json()
-      // refresh folders
-      const foldersRes = await fetch('/api/folders', { headers: { 'X-Client-Uid': user?.uid } })
-      if (foldersRes.ok) {
-        const raw = await foldersRes.json()
-        const fs = mapAndSortFolders(raw)
-        setFolders(fs)
-        setActiveFolder(updated._id)
-      }
-      setEditingFolder(null)
-      setShowFolderModal(false)
     } catch (e) {
       console.error('Failed to update folder', e)
+      alert('Failed to update folder: ' + e.message)
     }
   }
 
@@ -170,39 +225,31 @@ export default function AppContainer() {
       alert('The default "All Tasks" folder cannot be deleted.')
       return
     }
+    
+    // Note: Using native confirm for now, but this should ideally use the modal system
     if (!confirm('Delete folder and its tasks?')) return
+    
     try {
-      // server exposes two delete endpoints; we want to delete folder and its tasks
-      const res = await fetch(`/api/folders/folder-with-tasks/${folderId}`, { method: 'DELETE', headers: { 'X-Client-Uid': user?.uid } })
-      if (!res.ok) {
-        console.warn('Delete folder failed', res.status)
-        return
-      }
-      // reload folders and tasks
-      const [foldersRes, tasksRes] = await Promise.all([
-        fetch('/api/folders', { headers: { 'X-Client-Uid': user?.uid } }),
-        fetch('/api/tasks', { headers: { 'X-Client-Uid': user?.uid } })
-      ])
-      if (foldersRes.ok) {
-        const raw = await foldersRes.json()
-        const fs = mapAndSortFolders(raw)
-        setFolders(fs)
-        if (fs.length && !fs.find(f => f.id === activeFolder)) setActiveFolder(fs[0].id)
-      }
-      if (tasksRes.ok) {
-        const ts = await tasksRes.json()
-        const map = {}
-        ts.forEach(t => {
-          const fid = t.folder && t.folder._id ? t.folder._id : t.folder
-          const fidId = fid ? String(fid) : 'unknown'
-          if (!map[fidId]) map[fidId] = []
-          const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-          map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due, priority: t.priority || 'low' })
-        })
-        setTasksByFolder(map)
+      const result = await offlineDataService.deleteFolder(folderId, true) // true = delete tasks too
+      if (result.success) {
+        console.log(result.offline ? '📱 Folder deleted offline' : '☁️ Folder deleted online')
+        
+        // Update active folder if current one was deleted
+        const remainingFolders = await offlineDataService.getFolders()
+        if (remainingFolders.success && remainingFolders.data.length) {
+          const fs = mapAndSortFolders(remainingFolders.data)
+          if (!fs.find(f => f.id === activeFolder)) {
+            setActiveFolder(fs[0].id)
+          }
+        }
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Delete folder failed:', result.error)
+        alert('Failed to delete folder: ' + result.error)
       }
     } catch (e) {
       console.error('Failed to delete folder', e)
+      alert('Failed to delete folder: ' + e.message)
     }
   }
 
@@ -218,66 +265,61 @@ export default function AppContainer() {
 
   async function handleCreateTask({ title, description, dueDate, folder: folderId, priority }) {
     try {
-      const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ title, description, dueDate, folder: folderId || activeFolder, priority }) })
-      if (!res.ok) {
-        console.warn('Create task failed', res.status)
-        return
+      const result = await offlineDataService.createTask({
+        title,
+        description,
+        dueDate,
+        folder: folderId || activeFolder,
+        priority
+      })
+      
+      if (result.success) {
+        console.log(result.offline ? '📱 Task created offline' : '☁️ Task created online')
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Create task failed:', result.error)
+        alert('Failed to create task: ' + result.error)
       }
-      const t = await res.json()
-      // normalize server response into client shape
-      const formattedDue = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-      const folderKey = folderId || activeFolder
-      setTasksByFolder((prev) => ({ ...prev, [folderKey]: [...(prev[folderKey] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due: formattedDue, priority: t.priority || 'low' }] }))
     } catch (e) {
       console.error('Failed to create task', e)
+      alert('Failed to create task: ' + e.message)
     }
   }
 
   async function handleUpdateTask({ id, title, description, dueDate, folder: folderId, priority }) {
     try {
-      const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ title, description, dueDate, folder: folderId, priority }) })
-      if (!res.ok) {
-        console.warn('Update task failed', res.status)
-        return
-      }
-      const updated = await res.json()
-      const newFolderKey = folderId || activeFolder
-      // remove from any folder lists if folder changed
-      setTasksByFolder((prev) => {
-        const next = { ...prev }
-        // remove from previous folder if it exists
-        for (const k of Object.keys(next)) {
-          next[k] = next[k].filter(t => t.id !== id)
-        }
-        const formattedDue = updated.dueDate ? (typeof updated.dueDate === 'string' ? updated.dueDate.split('T')[0] : new Date(updated.dueDate).toISOString().split('T')[0]) : ''
-        const newTask = { id: updated._id, title: updated.title, description: updated.description, status: updated.currentStatus || 'Pending', due: formattedDue, priority: updated.priority || 'low' }
-        next[newFolderKey] = [...(next[newFolderKey] || []), newTask]
-        return next
+      const result = await offlineDataService.updateTask(id, {
+        title,
+        description,
+        dueDate,
+        folder: folderId,
+        priority
       })
-      // clear editing
-      setEditingTask(null)
+      
+      if (result.success) {
+        console.log(result.offline ? '📱 Task updated offline' : '☁️ Task updated online')
+        setEditingTask(null)
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Update task failed:', result.error)
+        alert('Failed to update task: ' + result.error)
+      }
     } catch (e) {
       console.error('Failed to update task', e)
+      alert('Failed to update task: ' + e.message)
     }
   }
 
   // change priority inline (used by TaskItem dropdown)
   async function handleChangePriority(id, newPriority) {
     try {
-      const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ priority: newPriority }) })
-      if (!res.ok) {
-        console.warn('Change priority failed', res.status)
-        return
+      const result = await offlineDataService.changeTaskPriority(id, newPriority)
+      if (result.success) {
+        console.log(result.offline ? '📱 Priority changed offline' : '☁️ Priority changed online')
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Change priority failed:', result.error)
       }
-      const updated = await res.json()
-      // update local tasksByFolder keeping task in the same folder
-      setTasksByFolder((prev) => {
-        const next = { ...prev }
-        for (const k of Object.keys(next)) {
-          next[k] = next[k].map(t => t.id === id ? { ...t, priority: updated.priority || t.priority } : t)
-        }
-        return next
-      })
     } catch (e) {
       console.error('Failed to change priority', e)
     }
@@ -420,8 +462,13 @@ export default function AppContainer() {
   async function deleteTask(id) {
     // Deletion confirmation is handled by the UI modal in TaskItem; proceed to delete
     try {
-      await fetch(`/api/tasks/${id}`, { method: 'DELETE', headers: { 'X-Client-Uid': user?.uid } })
-      setTasksByFolder((t) => ({ ...t, [activeFolder]: (t[activeFolder] || []).filter((x) => x.id !== id) }))
+      const result = await offlineDataService.deleteTask(id)
+      if (result.success) {
+        console.log(result.offline ? '📱 Task deleted offline' : '☁️ Task deleted online')
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Delete task failed:', result.error)
+      }
     } catch (e) {
       console.error('Failed to delete task', e)
     }
@@ -430,7 +477,6 @@ export default function AppContainer() {
   async function toggleStatus(id) {
     try {
       // find task in active folder or any folder (to support All Tasks view)
-      let sourceFolder = activeFolder
       let task = (tasksByFolder[activeFolder] || []).find(x => x.id === id)
       if (!task) {
         // search all folders
@@ -438,39 +484,39 @@ export default function AppContainer() {
           const found = (tasksByFolder[k] || []).find(x => x.id === id)
           if (found) {
             task = found
-            sourceFolder = k
             break
           }
         }
       }
       if (!task) return
+      
       const next = task.status === 'Completed' ? 'Pending' : 'Completed'
 
-      // request server update
-      const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ currentStatus: next }) })
-      if (!res.ok) {
-        console.warn('Toggle status failed', res.status)
-        return
-      }
-      const updated = await res.json()
-
-      // play animation: mark animating then update UI after short delay
+      // Start animation immediately
       setAnimatingTask({ id, to: next })
+
+      // Update via offline service
+      const result = await offlineDataService.toggleTaskStatus(id)
+      
+      // Complete animation after delay
       setTimeout(() => {
-        setTasksByFolder((t) => {
-          const nextMap = { ...t }
-          // remove/replace in sourceFolder
-          nextMap[sourceFolder] = (nextMap[sourceFolder] || []).map((task) => task.id === id ? { ...task, status: updated.currentStatus || next } : task)
-          return nextMap
-        })
         setAnimatingTask(null)
         if (next === 'Completed') {
           setShowConfetti(true)
           setTimeout(() => setShowConfetti(false), 1200)
         }
       }, 260)
+
+      if (result.success) {
+        console.log(result.offline ? '📱 Status toggled offline' : '☁️ Status toggled online')
+        // Data change event will trigger UI refresh
+      } else {
+        console.warn('Toggle status failed:', result.error)
+        // Animation will still complete but data won't update
+      }
     } catch (e) {
       console.error('Failed to toggle status', e)
+      setAnimatingTask(null) // Stop animation on error
     }
   }
 
@@ -483,7 +529,7 @@ export default function AppContainer() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} onAIAnalysis={handleAIAnalysis} aiAnalysisData={aiAnalysisData} /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} onAIAnalysis={handleAIAnalysis} aiAnalysisData={aiAnalysisData} isOnline={isOnline} syncStatus={syncStatus} /></PrivateRoute>} />
           <Route path="/:taskId" element={<PrivateRoute><TaskDetails /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
