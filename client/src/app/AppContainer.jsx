@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import Navbar from '../components/Navbar'
 import Dashboard from '../pages/Dashboard'
 import Profile from '../pages/Profile'
+import CreateTaskModal from '../components/CreateTaskModal'
+import CreateFolderModal from '../components/CreateFolderModal'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import PrivateRoute from '../components/PrivateRoute'
 import Login from '../components/Login'
@@ -12,6 +14,8 @@ export default function AppContainer() {
   const [tasksByFolder, setTasksByFolder] = useState({})
   const [activeFolder, setActiveFolder] = useState(null)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [showTaskModal, setShowTaskModal] = useState(false)
+  const [showFolderModal, setShowFolderModal] = useState(false)
 
   const location = useLocation()
   const { user, token } = useAuth()
@@ -28,7 +32,7 @@ export default function AppContainer() {
         ])
         if (foldersRes.ok) {
           const raw = await foldersRes.json()
-          const fs = raw.map(f => ({ id: f._id, name: f.name }))
+          const fs = raw.map(f => ({ id: f._id, name: f.name, icon: f.icon || '📁' }))
           setFolders(fs)
           if (fs.length) setActiveFolder(fs[0].id)
         }
@@ -42,7 +46,7 @@ export default function AppContainer() {
             if (!map[fidId]) map[fidId] = []
             // map server fields -> client-friendly fields
             const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due })
+            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
           })
           setTasksByFolder(map)
         }
@@ -53,11 +57,14 @@ export default function AppContainer() {
     loadData()
   }, [user, token])
 
-  async function addFolder() {
-    const name = prompt('New folder name')
-    if (!name) return
+  // open folder modal
+  function addFolder() {
+    setShowFolderModal(true)
+  }
+
+  async function handleCreateFolder({ name, icon }) {
     try {
-      const post = await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ name }) })
+      const post = await fetch('/api/folders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ name, icon }) })
       if (!post.ok) {
         console.warn('Create folder failed', post.status)
         return
@@ -68,7 +75,7 @@ export default function AppContainer() {
         return
       }
       const fs = await res.json()
-      const mapped = fs.map(f => ({ id: f._id, name: f.name }))
+      const mapped = fs.map(f => ({ id: f._id, name: f.name, icon: f.icon }))
       setFolders(mapped)
       if (mapped.length) setActiveFolder(mapped[0].id)
     } catch (e) {
@@ -76,17 +83,13 @@ export default function AppContainer() {
     }
   }
 
-  async function addTask() {
-    const title = prompt('Task title')
-    if (!title) return
-    if (!activeFolder) {
-      alert('Please create or select a folder before adding a task.')
-      return
-    }
-    const description = prompt('Task description') || ''
-    const due = prompt('Due date (YYYY-MM-DD)') || ''
+  function addTask() {
+    setShowTaskModal(true)
+  }
+
+  async function handleCreateTask({ title, description, dueDate, folder: folderId, priority }) {
     try {
-      const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ title, description, dueDate: due, folder: activeFolder }) })
+      const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ title, description, dueDate, folder: folderId || activeFolder, priority }) })
       if (!res.ok) {
         console.warn('Create task failed', res.status)
         return
@@ -94,7 +97,8 @@ export default function AppContainer() {
       const t = await res.json()
       // normalize server response into client shape
       const formattedDue = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-      setTasksByFolder((prev) => ({ ...prev, [activeFolder]: [...(prev[activeFolder] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due: formattedDue }] }))
+      const folderKey = folderId || activeFolder
+      setTasksByFolder((prev) => ({ ...prev, [folderKey]: [...(prev[folderKey] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due: formattedDue, priority: t.priority || 'low' }] }))
     } catch (e) {
       console.error('Failed to create task', e)
     }
@@ -136,6 +140,9 @@ export default function AppContainer() {
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
           <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} toggleStatus={toggleStatus} deleteTask={deleteTask} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} /></PrivateRoute>} />
         </Routes>
+        {/* Modals */}
+        <CreateTaskModal open={showTaskModal} onClose={() => setShowTaskModal(false)} onCreate={handleCreateTask} folders={folders} activeFolder={activeFolder} />
+        <CreateFolderModal open={showFolderModal} onClose={() => setShowFolderModal(false)} onCreate={handleCreateFolder} />
       </div>
     </div>
   )

@@ -19,6 +19,12 @@ const folderSchema = new mongoose.Schema(
             type: Date,
             default: null,
         }
+        ,
+        // Optional icon for the folder (emoji or small string)
+        icon: {
+            type: String,
+            default: '📁'
+        }
     },
     { timestamps: true }
 );

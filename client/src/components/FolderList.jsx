@@ -11,7 +11,10 @@ export default function FolderList({ folders, tasksByFolder, activeFolder, setAc
         <nav className="space-y-2">
           {folders.map((f) => (
             <button key={f.id} onClick={() => { setActiveFolder(f.id); setMobileOpen(false) }} className={`w-full text-left px-3 py-2 rounded-md flex items-center justify-between hover:bg-gray-50 ${activeFolder === f.id ? 'bg-gray-50 border-l-2 border-blue-400' : ''}`}>
-              <span className="text-sm font-medium text-gray-700">{f.name}</span>
+              <span className="flex items-center gap-3">
+                <span className="text-xl">{f.icon || '📁'}</span>
+                <span className="text-sm font-medium text-gray-700">{f.name}</span>
+              </span>
               <span className="text-xs text-gray-400">{(tasksByFolder[f.id] || []).length}</span>
             </button>
           ))}

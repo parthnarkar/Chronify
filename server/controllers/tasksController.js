@@ -34,7 +34,7 @@ export const createNewTask = async (req, res) => {
         if (initialStatus === 'in-progress') timestamps.inProgressTimestamps.push(now)
         if (initialStatus === 'completed') timestamps.completedTimestamps.push(now)
 
-        const task = new Tasks({ title, description, currentStatus: initialStatus, dueDate, folder, owner, ...timestamps })
+    const task = new Tasks({ title, description, currentStatus: initialStatus, dueDate, folder, owner, priority: req.body.priority || 'low', ...timestamps })
         await task.save();
 
         res.status(201).json(task);
@@ -90,6 +90,8 @@ export const updateTask = async (req, res) => {
         const ops = {}
         if (currentStatus && currentStatus !== existing.currentStatus) {
             setFields.currentStatus = currentStatus
+            // ensure we can also update priority if provided
+            if (req.body.priority) setFields.priority = req.body.priority
             const now = new Date()
             if (currentStatus === 'pending') ops.$push = { pendingTimestamps: now }
             if (currentStatus === 'in-progress') ops.$push = { inProgressTimestamps: now }

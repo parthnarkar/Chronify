@@ -4,7 +4,7 @@ import Tasks from "../models/Tasks.js";
 //Create a new folder
 export const createFolder = async (req, res) => {
     try {
-        const { name } = req.body;
+    const { name, icon } = req.body;
         const owner = req.headers['x-client-uid'] || null
 
         if (!owner) return res.status(401).json({ message: 'Missing X-Client-Uid header' })
@@ -14,7 +14,7 @@ export const createFolder = async (req, res) => {
             return res.status(400).json({ message: 'Folder name is required' });
         }
 
-    const folder = new Folder({ name, owner });
+    const folder = new Folder({ name, owner, icon: icon || '📁' });
         await folder.save();
 
         res.status(201).json(folder);
