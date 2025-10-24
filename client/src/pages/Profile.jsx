@@ -252,7 +252,7 @@ export default function Profile() {
             <motion.div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4" variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}>
               <motion.div className="lg:col-span-2 bg-white border rounded-lg p-4" variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-gray-600">Activity (last 7 days)</h3>
+                  <h3 className="text-sm font-medium text-gray-600">Activity (Last 7 Days)</h3>
                   <div className="text-xs text-gray-500">Auto-updated</div>
                 </div>
                 <div className="mt-3">
@@ -260,7 +260,7 @@ export default function Profile() {
                 </div>
 
                 <div className="mt-4">
-                  <h4 className="text-sm font-medium text-gray-700">Recent activity</h4>
+                  <h4 className="text-sm font-medium text-gray-700">Recent Activity</h4>
                   <ul className="mt-2 space-y-2">
                     {recentActivities.map(t => (
                       <li key={t.id || t._id} className="flex items-start justify-between p-2 rounded hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/${t.id || t._id}`)}>
@@ -307,7 +307,7 @@ export default function Profile() {
             </motion.div>
 
             <motion.div className="mt-6 bg-white border rounded-lg p-4" variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}>
-              <h3 className="text-sm font-medium text-gray-600">Detailed task list</h3>
+              <h3 className="text-sm font-medium text-gray-600">Detailed Task List</h3>
               <div className="mt-3 grid gap-2">
                 {loadingStats && <div className="text-sm text-gray-500">Loading tasks…</div>}
                 {error && <div className="text-sm text-red-500">{error}</div>}
@@ -317,7 +317,7 @@ export default function Profile() {
                     <div className="flex-1 pr-4">
                       <div className="flex items-center gap-3">
                         <div className="text-sm font-medium">{t.title || t.name || 'Untitled task'}</div>
-                        {t.metadata?.type === 'meeting' && <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">meeting</span>}
+                        {t.metadata?.type === 'meeting' && <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded">Meeting</span>}
                         {(t.priority || t.metadata?.priority) && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded">{(t.priority || t.metadata?.priority || 'low').toUpperCase()}</span>}
                       </div>
                       <div className="mt-1 text-xs text-gray-500">{(t.description || t.desc || '').slice(0, 140)}{(t.description || '').length > 140 ? '…' : ''}</div>
@@ -325,7 +325,7 @@ export default function Profile() {
                     <div className="text-right text-xs text-gray-400">
                       <div>{new Date(t.createdAt || t.created || Date.now()).toLocaleDateString()}</div>
                       <div className="mt-2">
-                        <button onClick={() => navigate(`/${t.id || t._id}`)} className="text-xs px-2 py-1 border rounded">View</button>
+                        <button onClick={() => navigate(`/${t.id || t._id}`)} className="text-xs px-2 py-1 border rounded text-neutral-600 hover:text-black hover:bg-gray-200 cursor-pointer">View</button>
                       </div>
                     </div>
                   </div>

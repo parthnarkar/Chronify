@@ -128,7 +128,7 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
                     onAIAnalysis();
                   }}
                   disabled={syncData.syncing || aiAnalysisData?.analyzing || !syncData.connected}
-                  className={`px-3 py-1.5 text-xs rounded-md font-medium ${
+                  className={`px-3 py-1.5 text-xs rounded-md font-medium cursor-pointer ${
                     syncData.connected 
                       ? 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400' 
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'

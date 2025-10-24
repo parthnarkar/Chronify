@@ -113,7 +113,7 @@ export default function Navbar({ mobileOpen, setMobileOpen }) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18 }}
-              className="absolute right-0 mt-2 w-44 bg-white border border-gray-100 rounded-md shadow-lg z-20"
+              className="absolute right-0 w-44 bg-white border border-gray-100 rounded-md shadow-lg z-20"
             >
               <div className="px-3 py-2">
                 <button onClick={() => { setMenuOpen(false); navigate('/profile') }} className="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">View Profile</button>

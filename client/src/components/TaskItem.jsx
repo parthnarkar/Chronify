@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import StatusPill from './StatusPill'
 
@@ -80,7 +81,12 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
   const animDirection = isAnimatingOut && animatingTask.to === 'Completed' ? 'translate-x-6' : isAnimatingOut && animatingTask.to === 'Pending' ? '-translate-x-6' : 'translate-x-0'
   const [open, setOpen] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const ref = useRef()
+  // ref for the priority button and dropdown (dropdown rendered into portal)
+  const priorityBtnRef = useRef()
+  const dropdownRef = useRef()
+  const [dropdownStyle, setDropdownStyle] = useState({ top: 0, left: 0 })
+  const [isHovering, setIsHovering] = useState(false)
+  const closeTimerRef = useRef()
   const navigate = useNavigate()
 
   // Handle delete confirmation
@@ -142,12 +148,69 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
 
   useEffect(() => {
     function onDoc(e) {
-      if (!ref.current) return
-      if (!ref.current.contains(e.target)) setOpen(false)
+      // close priority dropdown when clicking outside of the priority button and dropdown
+      const btn = priorityBtnRef.current
+      const dd = dropdownRef.current
+      if (btn && btn.contains(e.target)) return
+      if (dd && dd.contains(e.target)) return
+      setOpen(false)
     }
     document.addEventListener('click', onDoc)
     return () => document.removeEventListener('click', onDoc)
   }, [])
+
+  // Close dropdown with a short delay when pointer leaves both button and dropdown
+  useEffect(() => {
+    // if user moves cursor away, close after a small delay
+    if (!isHovering) {
+      // start/replace the close timer
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = setTimeout(() => setOpen(false), 200)
+    } else {
+      // cancel any pending close timer while hovering
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = undefined
+      }
+    }
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = undefined
+      }
+    }
+  }, [isHovering])
+
+  // Allow closing the dropdown with Escape
+  useEffect(() => {
+    if (!open) return undefined
+    function onKey(e) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
+
+  // compute dropdown position when opened and reposition on resize/scroll
+  useEffect(() => {
+    if (!open) return undefined
+    function computePosition() {
+      const btn = priorityBtnRef.current
+      if (!btn) return
+      const rect = btn.getBoundingClientRect()
+      const DROPDOWN_WIDTH = 112 // matches w-28 (28 * 4)
+      const left = Math.max(8 + window.scrollX, rect.right + window.scrollX - DROPDOWN_WIDTH)
+      const top = rect.bottom + window.scrollY + 6
+      setDropdownStyle({ top, left })
+    }
+    computePosition()
+    window.addEventListener('resize', computePosition)
+    window.addEventListener('scroll', computePosition, true)
+    return () => {
+      window.removeEventListener('resize', computePosition)
+      window.removeEventListener('scroll', computePosition, true)
+    }
+  }, [open])
 
   return (
   <article onClick={() => {/* noop at article level; navigation handled on title area */}} className={`relative bg-white border border-gray-100 rounded-lg shadow-sm hover:shadow transition-all ${isAnimatingOut ? `${animDirection} opacity-0` : 'translate-x-0 opacity-100'}`}>
@@ -201,21 +264,44 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
                 <span className="text-sm text-gray-700">{formatDueDate(task.due) || '—'}</span>
               </div>
 
-              <div className="relative flex flex-col items-end md:items-center text-right md:text-left" ref={ref}>
+              <div className="relative flex flex-col items-end md:items-center text-right md:text-left">
                 <span className="text-xs text-gray-400">Priority</span>
-                <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${accent} ${priorityTextColor}`}>
+                <button
+                  ref={priorityBtnRef}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
+                  onMouseEnter={() => setIsHovering(true)}
+                  onMouseLeave={() => setIsHovering(false)}
+                  onFocus={() => setIsHovering(true)}
+                  onBlur={() => setIsHovering(false)}
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${accent} ${priorityTextColor}`}>
                   <span className="mr-2">{(task.priority || 'low').toUpperCase()}</span>
                   {/* down chevron */}
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clipRule="evenodd" /></svg>
                 </button>
-
-                {open && (
-                  <div className="mt-2 bg-white border rounded shadow-md w-28 text-sm text-left right-0 absolute z-30">
-                    {['low', 'medium', 'high'].map(p => (
-                      <button key={p} onClick={() => { setOpen(false); if (changePriority) changePriority(task.id, p) }} className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${task.priority === p ? 'font-semibold' : ''}`}>{p.charAt(0).toUpperCase() + p.slice(1)}</button>
-                    ))}
-                  </div>
-                )}
+                {/* Render dropdown into document.body to avoid clipping/overflow issues */}
+                {typeof document !== 'undefined' && createPortal(
+                  <AnimatePresence>
+                    {open && (
+                      <motion.div
+                        ref={dropdownRef}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 8 }}
+                        transition={{ duration: 0.14 }}
+                        style={{ position: 'absolute', top: dropdownStyle.top, left: dropdownStyle.left, zIndex: 9999 }}
+                        className="bg-white border rounded shadow-md w-28 text-sm text-left"
+                        onMouseEnter={() => setIsHovering(true)}
+                        onMouseLeave={() => setIsHovering(false)}
+                        tabIndex={-1}
+                      >
+                        {['low', 'medium', 'high'].map(p => (
+                          <button key={p} onClick={(e) => { e.stopPropagation(); setOpen(false); if (changePriority) changePriority(task.id, p) }} className={`w-full text-left px-3 py-2 hover:bg-gray-50 cursor-pointer ${task.priority === p ? 'font-semibold' : ''}`}>{p.charAt(0).toUpperCase() + p.slice(1)}</button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                , document.body)}
               </div>
             </>
           )}
