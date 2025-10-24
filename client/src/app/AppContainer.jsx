@@ -16,6 +16,7 @@ export default function AppContainer() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showTaskModal, setShowTaskModal] = useState(false)
   const [showFolderModal, setShowFolderModal] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
 
   const location = useLocation()
   const { user, token } = useAuth()
@@ -87,6 +88,12 @@ export default function AppContainer() {
     setShowTaskModal(true)
   }
 
+  function openEditTask(task, folderId) {
+    // ensure task includes folder id for editing
+    setEditingTask({ ...task, folder: task.folder || folderId })
+    setShowTaskModal(true)
+  }
+
   async function handleCreateTask({ title, description, dueDate, folder: folderId, priority }) {
     try {
       const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ title, description, dueDate, folder: folderId || activeFolder, priority }) })
@@ -101,6 +108,34 @@ export default function AppContainer() {
       setTasksByFolder((prev) => ({ ...prev, [folderKey]: [...(prev[folderKey] || []), { id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due: formattedDue, priority: t.priority || 'low' }] }))
     } catch (e) {
       console.error('Failed to create task', e)
+    }
+  }
+
+  async function handleUpdateTask({ id, title, description, dueDate, folder: folderId, priority }) {
+    try {
+      const res = await fetch(`/api/tasks/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Client-Uid': user?.uid }, body: JSON.stringify({ title, description, dueDate, folder: folderId, priority }) })
+      if (!res.ok) {
+        console.warn('Update task failed', res.status)
+        return
+      }
+      const updated = await res.json()
+      const newFolderKey = folderId || activeFolder
+      // remove from any folder lists if folder changed
+      setTasksByFolder((prev) => {
+        const next = { ...prev }
+        // remove from previous folder if it exists
+        for (const k of Object.keys(next)) {
+          next[k] = next[k].filter(t => t.id !== id)
+        }
+        const formattedDue = updated.dueDate ? (typeof updated.dueDate === 'string' ? updated.dueDate.split('T')[0] : new Date(updated.dueDate).toISOString().split('T')[0]) : ''
+        const newTask = { id: updated._id, title: updated.title, description: updated.description, status: updated.currentStatus || 'pending', due: formattedDue, priority: updated.priority || 'low' }
+        next[newFolderKey] = [...(next[newFolderKey] || []), newTask]
+        return next
+      })
+      // clear editing
+      setEditingTask(null)
+    } catch (e) {
+      console.error('Failed to update task', e)
     }
   }
 
@@ -138,10 +173,10 @@ export default function AppContainer() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} toggleStatus={toggleStatus} deleteTask={deleteTask} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} toggleStatus={toggleStatus} deleteTask={deleteTask} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
-        <CreateTaskModal open={showTaskModal} onClose={() => setShowTaskModal(false)} onCreate={handleCreateTask} folders={folders} activeFolder={activeFolder} />
+        <CreateTaskModal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditingTask(null) }} onCreate={handleCreateTask} onUpdate={handleUpdateTask} initial={editingTask} folders={folders} activeFolder={activeFolder} />
         <CreateFolderModal open={showFolderModal} onClose={() => setShowFolderModal(false)} onCreate={handleCreateFolder} />
       </div>
     </div>

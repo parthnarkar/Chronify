@@ -3,7 +3,7 @@ import FolderList from '../components/FolderList'
 import TaskList from '../components/TaskList'
 import IconPlus from '../components/IconPlus'
 
-export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, toggleStatus, deleteTask, mobileOpen, setMobileOpen }) {
+export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, toggleStatus, deleteTask, mobileOpen, setMobileOpen }) {
   const tasks = tasksByFolder[activeFolder] || []
 
   return (
@@ -25,7 +25,7 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
           </div>
         </div>
 
-        <TaskList tasks={tasks} toggleStatus={toggleStatus} deleteTask={deleteTask} />
+        <TaskList tasks={tasks} toggleStatus={toggleStatus} deleteTask={deleteTask} editTask={editTask} folderId={activeFolder} />
       </main>
     </div>
   )

@@ -1,7 +1,7 @@
 import React from 'react'
 import TaskItem from './TaskItem'
 
-export default function TaskList({ tasks, toggleStatus, deleteTask }) {
+export default function TaskList({ tasks, toggleStatus, deleteTask, editTask, folderId }) {
   return (
     <div className="space-y-4">
       {tasks.length === 0 && (
@@ -9,7 +9,7 @@ export default function TaskList({ tasks, toggleStatus, deleteTask }) {
       )}
 
       {tasks.map((task, idx) => (
-        <TaskItem key={task.id || idx} task={task} toggleStatus={toggleStatus} deleteTask={deleteTask} />
+        <TaskItem key={task.id || idx} task={task} toggleStatus={toggleStatus} deleteTask={deleteTask} editTask={editTask} folderId={folderId} />
       ))}
     </div>
   )

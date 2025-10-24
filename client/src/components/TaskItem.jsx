@@ -1,7 +1,7 @@
 import React from 'react'
 import StatusPill from './StatusPill'
 
-export default function TaskItem({ task, toggleStatus, deleteTask }) {
+export default function TaskItem({ task, toggleStatus, deleteTask, editTask, folderId }) {
   const pClass = task.priority === 'high' ? 'bg-red-100 text-red-700' : task.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
   return (
     <article className="bg-white border border-gray-100 rounded-lg p-4 shadow-sm hover:shadow md:flex md:justify-between">
@@ -24,7 +24,7 @@ export default function TaskItem({ task, toggleStatus, deleteTask }) {
         </div>
         <div className="text-sm text-gray-400">{task.due}</div>
         <div className="flex items-center gap-2">
-          <button onClick={() => alert('edit placeholder')} className="text-sm text-gray-500 hover:text-gray-700">Edit</button>
+          <button onClick={() => editTask ? editTask(task, folderId) : alert('Edit Task Details')} className="text-sm text-gray-500 hover:text-gray-700">Edit</button>
           <button onClick={() => deleteTask(task.id)} className="text-sm text-red-500 hover:text-red-600">Delete</button>
         </div>
       </div>
