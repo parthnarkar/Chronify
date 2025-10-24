@@ -41,6 +41,14 @@ const userSyncSchema = new mongoose.Schema(
         syncErrors: {
             type: Array,
             default: [],
+        },
+        lastMeetingAnalysis: {
+            type: Date,
+            default: null,
+        },
+        analysisHistory: {
+            type: Array,
+            default: [],
         }
     },
     { timestamps: true }

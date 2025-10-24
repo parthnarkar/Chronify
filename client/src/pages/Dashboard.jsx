@@ -3,7 +3,7 @@ import FolderList from '../components/FolderList'
 import TaskList from '../components/TaskList'
 import IconPlus from '../components/IconPlus'
 
-export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, editFolder, toggleStatus, deleteTask, changePriority, mobileOpen, setMobileOpen, animatingTask, deleteFolder, syncData, onGoogleSync }) {
+export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, editFolder, toggleStatus, deleteTask, changePriority, mobileOpen, setMobileOpen, animatingTask, deleteFolder, syncData, onGoogleSync, onAIAnalysis, aiAnalysisData }) {
   const activeFolderObj = folders.find((x) => x.id === activeFolder)
   let tasks = []
   if (activeFolderObj && activeFolderObj.name === 'All Tasks') {
@@ -12,8 +12,76 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
   } else {
     tasks = tasksByFolder[activeFolder] || []
   }
-  const pending = tasks.filter(t => t.status !== 'completed')
-  const completed = tasks.filter(t => t.status === 'completed')
+
+  // Sort function for meeting tasks
+  const sortMeetingTasks = (tasksToSort) => {
+    const meetingTasks = tasksToSort.filter(t => t.metadata?.type === 'meeting')
+    const regularTasks = tasksToSort.filter(t => t.metadata?.type !== 'meeting')
+
+    // Sort meeting tasks by date (dd-mm-yyyy format)
+    meetingTasks.sort((a, b) => {
+      const dateA = a.metadata?.meetingDate || a.dueDate
+      const dateB = b.metadata?.meetingDate || b.dueDate
+      
+      if (!dateA && !dateB) return 0
+      if (!dateA) return 1
+      if (!dateB) return -1
+      
+      // Parse dd-mm-yyyy format
+      const parseDate = (dateStr) => {
+        if (dateStr.includes('-')) {
+          const [day, month, year] = dateStr.split('-').map(Number)
+          return new Date(year, month - 1, day)
+        }
+        return new Date(dateStr)
+      }
+      
+      return parseDate(dateA).getTime() - parseDate(dateB).getTime()
+    })
+
+    // Sort regular tasks by due date
+    regularTasks.sort((a, b) => {
+      const dateA = a.dueDate ? new Date(a.dueDate) : null
+      const dateB = b.dueDate ? new Date(b.dueDate) : null
+      
+      if (!dateA && !dateB) return 0
+      if (!dateA) return 1
+      if (!dateB) return -1
+      
+      return dateA.getTime() - dateB.getTime()
+    })
+
+    // Return meeting tasks first (chronologically), then regular tasks
+    return [...meetingTasks, ...regularTasks]
+  }
+
+  // Sort tasks appropriately
+  const allSorted = activeFolderObj?.name === 'MEETINGS' ? 
+    sortMeetingTasks(tasks) : 
+    tasks.sort((a, b) => {
+      if (a.metadata?.type === 'meeting' && b.metadata?.type === 'meeting') {
+        const dateA = a.metadata?.meetingDate || a.dueDate
+        const dateB = b.metadata?.meetingDate || b.dueDate
+        
+        if (!dateA && !dateB) return 0
+        if (!dateA) return 1
+        if (!dateB) return -1
+        
+        const parseDate = (dateStr) => {
+          if (dateStr.includes('-')) {
+            const [day, month, year] = dateStr.split('-').map(Number)
+            return new Date(year, month - 1, day)
+          }
+          return new Date(dateStr)
+        }
+        
+        return parseDate(dateA).getTime() - parseDate(dateB).getTime()
+      }
+      return 0
+    })
+
+  const pending = allSorted.filter(t => t.status !== 'completed')
+  const completed = allSorted.filter(t => t.status === 'completed')
 
   return (
     <div className="md:grid md:grid-cols-4 gap-8">
@@ -51,45 +119,31 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
                   <p className="text-xs text-red-600 mt-1">{syncData.error}</p>
                 )}
               </div>
-              <button 
-                onClick={onGoogleSync}
-                disabled={syncData.syncing || !syncData.connected}
-                className={`px-3 py-1.5 text-xs rounded-md font-medium ${
-                  syncData.connected 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                {syncData.syncing ? 'Syncing...' : 'Sync Now'}
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={async () => {
+                    // First perform Google sync
+                    await onGoogleSync();
+                    // Then perform AI analysis
+                    onAIAnalysis();
+                  }}
+                  disabled={syncData.syncing || aiAnalysisData?.analyzing || !syncData.connected}
+                  className={`px-3 py-1.5 text-xs rounded-md font-medium ${
+                    syncData.connected 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400' 
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                  title="Sync Google data and analyze emails with AI"
+                >
+                  {syncData.syncing || aiAnalysisData?.analyzing 
+                    ? (syncData.syncing ? 'Syncing...' : 'Analyzing...') 
+                    : 'Sync Now'}
+                </button>
+              </div>
             </div>
             
             {syncData.connected && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Calendar Events */}
-                <div className="bg-white rounded border p-3">
-                  <h4 className="text-xs font-semibold text-gray-700 mb-2">
-                    📅 Upcoming Events ({syncData.events.length})
-                  </h4>
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {syncData.events.length > 0 ? (
-                      syncData.events.slice(0, 3).map(event => (
-                        <div key={event.id} className="text-xs">
-                          <div className="font-medium text-gray-800 truncate">{event.summary}</div>
-                          <div className="text-gray-500">
-                            {new Date(event.start).toLocaleDateString()} {new Date(event.start).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-xs text-gray-500">No upcoming events</div>
-                    )}
-                    {syncData.events.length > 3 && (
-                      <div className="text-xs text-blue-600">+ {syncData.events.length - 3} more events</div>
-                    )}
-                  </div>
-                </div>
-
+              <div className="grid gap-4">
                 {/* Gmail Emails */}
                 <div className="bg-white rounded border p-3">
                   <h4 className="text-xs font-semibold text-gray-700 mb-2">
@@ -111,6 +165,31 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
                     )}
                   </div>
                 </div>
+              </div>
+            )}
+            
+            {/* AI Analysis Results */}
+            {aiAnalysisData?.lastAnalysis && (
+              <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-md">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-purple-900">🤖 AI Meeting Analysis</h4>
+                  <span className="text-xs text-purple-700">
+                    {new Date(aiAnalysisData.lastAnalysis).toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-xs text-purple-800">
+                  Analyzed {aiAnalysisData.analyzed} emails • 
+                  Found {aiAnalysisData.meetingsDetected} meetings • 
+                  Created {aiAnalysisData.tasksCreated} tasks
+                </div>
+                {aiAnalysisData.error && (
+                  <div className="text-xs text-red-600 mt-1">{aiAnalysisData.error}</div>
+                )}
+                {aiAnalysisData.tasksCreated > 0 && (
+                  <div className="text-xs text-purple-700 mt-1">
+                    ✅ Check your MEETINGS folder for new tasks!
+                  </div>
+                )}
               </div>
             )}
           </div>

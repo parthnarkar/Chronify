@@ -8,13 +8,48 @@ function priorityColor(priority) {
 }
 
 export default function TaskItem({ task, toggleStatus, deleteTask, editTask, changePriority, folderId, animatingTask }) {
-  const isCompleted = task.status === 'completed'
-  const accent = priorityColor(task.priority)
+  const isCompleted = task.status === 'completed' || task.currentStatus === 'completed'
+  
+  // Efficient reference variable to identify meeting tasks
+  const isMeetingTask = task.metadata?.type === 'meeting'
+  
+  const accent = isMeetingTask ? 'bg-blue-600' : priorityColor(task.priority)
   const priorityTextColor = task.priority === 'medium' ? 'text-black' : 'text-white'
   const isAnimatingOut = animatingTask && animatingTask.id === task.id
   const animDirection = isAnimatingOut && animatingTask.to === 'completed' ? 'translate-x-6' : isAnimatingOut && animatingTask.to === 'pending' ? '-translate-x-6' : 'translate-x-0'
   const [open, setOpen] = useState(false)
   const ref = useRef()
+
+  // Format date to dd-mm-yyyy for meeting tasks
+  const formatMeetingDate = (dateStr) => {
+    if (!dateStr) return '--'
+    try {
+      // If already in dd-mm-yyyy format, return as is
+      if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) return dateStr
+      
+      const date = new Date(dateStr)
+      const day = date.getDate().toString().padStart(2, '0')
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const year = date.getFullYear()
+      return `${day}-${month}-${year}`
+    } catch {
+      return '--'
+    }
+  }
+
+  // Format date for regular tasks (due date)
+  const formatDueDate = (dateStr) => {
+    if (!dateStr) return '—'
+    try {
+      const date = new Date(dateStr)
+      const day = date.getDate().toString().padStart(2, '0')
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const year = date.getFullYear()
+      return `${day}-${month}-${year}`
+    } catch {
+      return dateStr
+    }
+  }
 
   useEffect(() => {
     function onDoc(e) {
@@ -37,7 +72,7 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h4 className={`text-sm font-semibold truncate ${isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</h4>
-                <div className="hidden sm:inline-flex"><StatusPill status={task.status} /></div>
+                <div className="hidden sm:inline-flex"><StatusPill status={task.status || task.currentStatus} /></div>
               </div>
               <p className="text-sm text-gray-500 mt-1 truncate">{task.description || 'No description'}</p>
             </div>
@@ -45,27 +80,48 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
         </div>
 
         <div className="flex items-center gap-3 md:gap-4">
-          <div className="flex flex-col items-end md:items-center text-right md:text-left">
-            <span className="text-xs text-gray-400">Due</span>
-            <span className="text-sm text-gray-700">{task.due || '—'}</span>
-          </div>
-
-          <div className="relative flex flex-col items-end md:items-center text-right md:text-left" ref={ref}>
-            <span className="text-xs text-gray-400">Priority</span>
-            <button type="button" onClick={() => setOpen(o => !o)} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${accent} ${priorityTextColor}`}>
-              <span className="mr-2">{(task.priority || 'low').toUpperCase()}</span>
-              {/* down chevron */}
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clipRule="evenodd" /></svg>
-            </button>
-
-            {open && (
-              <div className="mt-2 bg-white border rounded shadow-md w-28 text-sm text-left right-0 absolute z-30">
-                {['low', 'medium', 'high'].map(p => (
-                  <button key={p} onClick={() => { setOpen(false); if (changePriority) changePriority(task.id, p) }} className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${task.priority === p ? 'font-semibold' : ''}`}>{p.charAt(0).toUpperCase() + p.slice(1)}</button>
-                ))}
+          {isMeetingTask ? (
+            // Meeting Date & Time for meeting tasks (NO PRIORITY)
+            <>
+              <div className="flex flex-col items-end md:items-center text-right md:text-left">
+                <span className="text-xs text-gray-400">Meeting Date</span>
+                <span className="text-sm text-gray-700 font-medium">
+                  {formatMeetingDate(task.metadata?.meetingDate)}
+                </span>
               </div>
-            )}
-          </div>
+              <div className="flex flex-col items-end md:items-center text-right md:text-left">
+                <span className="text-xs text-gray-400">Meeting Time</span>
+                <span className="text-sm text-gray-700 font-medium">
+                  {task.metadata?.meetingTime || '--'}
+                </span>
+              </div>
+            </>
+          ) : (
+            // Standard due date and priority for regular tasks
+            <>
+              <div className="flex flex-col items-end md:items-center text-right md:text-left">
+                <span className="text-xs text-gray-400">Due</span>
+                <span className="text-sm text-gray-700">{formatDueDate(task.due) || '—'}</span>
+              </div>
+
+              <div className="relative flex flex-col items-end md:items-center text-right md:text-left" ref={ref}>
+                <span className="text-xs text-gray-400">Priority</span>
+                <button type="button" onClick={() => setOpen(o => !o)} className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${accent} ${priorityTextColor}`}>
+                  <span className="mr-2">{(task.priority || 'low').toUpperCase()}</span>
+                  {/* down chevron */}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clipRule="evenodd" /></svg>
+                </button>
+
+                {open && (
+                  <div className="mt-2 bg-white border rounded shadow-md w-28 text-sm text-left right-0 absolute z-30">
+                    {['low', 'medium', 'high'].map(p => (
+                      <button key={p} onClick={() => { setOpen(false); if (changePriority) changePriority(task.id, p) }} className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${task.priority === p ? 'font-semibold' : ''}`}>{p.charAt(0).toUpperCase() + p.slice(1)}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="flex items-center gap-1">
             <button onClick={() => editTask ? editTask(task, folderId) : alert('Edit Task')} title="Edit" className="p-1 rounded hover:bg-gray-100 cursor-pointer">

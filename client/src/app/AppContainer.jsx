@@ -30,6 +30,16 @@ export default function AppContainer() {
     syncing: false 
   })
 
+  // AI analysis state
+  const [aiAnalysisData, setAiAnalysisData] = useState({
+    analyzing: false,
+    lastAnalysis: null,
+    analyzed: 0,
+    meetingsDetected: 0,
+    tasksCreated: 0,
+    error: null
+  })
+
   const location = useLocation()
   const { user, token } = useAuth()
 
@@ -328,6 +338,84 @@ export default function AppContainer() {
     }
   }
 
+  // AI analysis functionality  
+  async function handleAIAnalysis() {
+    if (!user) return
+    
+    setAiAnalysisData(prev => ({ ...prev, analyzing: true, error: null }))
+    
+    try {
+      const headers = { 'Content-Type': 'application/json', 'X-Client-Uid': user.uid }
+      const res = await fetch('/api/google/analyze-meetings', { 
+        method: 'POST', 
+        headers 
+      })
+      
+      if (res.ok) {
+        const data = await res.json()
+        setAiAnalysisData(prev => ({
+          ...prev,
+          analyzing: false,
+          lastAnalysis: new Date().toISOString(),
+          analyzed: data.analyzed,
+          meetingsDetected: data.meetingsDetected,
+          tasksCreated: data.tasksCreated,
+          error: null
+        }))
+        
+        // Refresh folders and tasks to show new MEETINGS folder and tasks
+        const [foldersRes, tasksRes] = await Promise.all([
+          fetch('/api/folders', { headers: { 'X-Client-Uid': user.uid } }),
+          fetch('/api/tasks', { headers: { 'X-Client-Uid': user.uid } })
+        ])
+        
+        if (foldersRes.ok) {
+          const raw = await foldersRes.json()
+          const fs = mapAndSortFolders(raw)
+          setFolders(fs)
+          
+          // Set active folder to MEETINGS if tasks were created
+          if (data.tasksCreated > 0) {
+            const meetingsFolder = fs.find(f => f.name === 'MEETINGS')
+            if (meetingsFolder) {
+              setActiveFolder(meetingsFolder.id)
+            }
+          }
+        }
+        
+        if (tasksRes.ok) {
+          const ts = await tasksRes.json()
+          const map = {}
+          ts.forEach(t => {
+            const fid = t.folder && t.folder._id ? t.folder._id : t.folder
+            const fidId = fid ? String(fid) : 'unknown'
+            if (!map[fidId]) map[fidId] = []
+            const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
+            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'pending', due, priority: t.priority || 'low' })
+          })
+          setTasksByFolder(map)
+        }
+        
+      } else {
+        const errorData = await res.json().catch(() => ({}))
+        const errorMessage = errorData.message || `AI analysis failed with status ${res.status}`
+        
+        setAiAnalysisData(prev => ({ 
+          ...prev, 
+          analyzing: false,
+          error: errorMessage
+        }))
+      }
+    } catch (e) {
+      console.error('Failed to analyze meetings with AI', e)
+      setAiAnalysisData(prev => ({ 
+        ...prev, 
+        analyzing: false,
+        error: 'Network error. Please try again.'
+      }))
+    }
+  }
+
   async function deleteTask(id) {
     if (!confirm('Delete this task?')) return
     try {
@@ -394,7 +482,7 @@ export default function AppContainer() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} onAIAnalysis={handleAIAnalysis} aiAnalysisData={aiAnalysisData} /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
         <CreateTaskModal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditingTask(null) }} onCreate={handleCreateTask} onUpdate={handleUpdateTask} initial={editingTask} folders={folders} activeFolder={activeFolder} />

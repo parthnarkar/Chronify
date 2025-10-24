@@ -58,6 +58,30 @@ const taskSchema = new mongoose.Schema(
         priorityHistory: {
             type: [String],
             default: []
+        },
+        // Metadata for AI-generated tasks and email integration
+        metadata: {
+            type: {
+                emailId: String,
+                aiGenerated: Boolean,
+                confidence: Number,
+                type: String, // 'meeting', 'regular', etc.
+                meetingDate: String, // Meeting date in dd-mm-yyyy format
+                meetingTime: String, // Meeting time in display format (e.g., "08:30" or "21:30")
+                createdAt: Date,
+                aiModel: String,
+                meetingDetails: {
+                    type: {
+                        originalSubject: String,
+                        scheduledDateTime: Date, // Full ISO datetime
+                        meetingDate: String, // Display format (e.g., "Friday, October 24, 2025")
+                        meetingTime: String, // Display format (e.g., "8:30 AM")
+                        participants: [String],
+                        location: String,
+                        agenda: String
+                    }
+                }
+            }
         }
     },
     { timestamps: true }

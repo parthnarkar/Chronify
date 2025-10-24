@@ -1,8 +1,53 @@
 import express from 'express';
 import { google } from 'googleapis';
 import UserSync from '../models/UserSync.js';
+import geminiService from '../services/geminiService.js';
+import Folder from '../models/Folder.js';
+import Tasks from '../models/Tasks.js';
 
 const router = express.Router();
+
+// Helpers to decode Gmail base64url payloads and extract a text body
+function decodeBase64Url(data = '') {
+    // Gmail returns base64url (URL-safe) encoded strings
+    const b64 = data.replace(/-/g, '+').replace(/_/g, '/');
+    try {
+        return Buffer.from(b64, 'base64').toString('utf-8');
+    } catch (e) {
+        return '';
+    }
+}
+
+function extractBodyFromPayload(payload) {
+    if (!payload) return '';
+    // direct body
+    if (payload.body && payload.body.data) {
+        return decodeBase64Url(payload.body.data);
+    }
+    // multipart
+    if (Array.isArray(payload.parts)) {
+        // prefer text/plain
+        for (const p of payload.parts) {
+            const ct = (p.mimeType || '').toLowerCase();
+            if (ct === 'text/plain' && p.body && p.body.data) {
+                return decodeBase64Url(p.body.data);
+            }
+        }
+        // fallback to text/html or any text/*
+        for (const p of payload.parts) {
+            const ct = (p.mimeType || '').toLowerCase();
+            if ((ct === 'text/html' || ct.startsWith('text/')) && p.body && p.body.data) {
+                return decodeBase64Url(p.body.data);
+            }
+        }
+        // nested parts
+        for (const p of payload.parts) {
+            const nested = extractBodyFromPayload(p);
+            if (nested) return nested;
+        }
+    }
+    return '';
+}
 
 // Connect Google services - store access token
 router.post('/connect', async (req, res) => {
@@ -166,26 +211,20 @@ router.get('/gmail', async (req, res) => {
                     const from = headers.find(h => h.name === 'From')?.value || 'Unknown Sender';
                     const date = headers.find(h => h.name === 'Date')?.value || new Date().toISOString();
 
-                    // Get email body content
-                    let bodyText = '';
-                    if (msgDetail.data.payload?.body?.data) {
-                        bodyText = Buffer.from(msgDetail.data.payload.body.data, 'base64').toString('utf-8');
-                    } else if (msgDetail.data.payload?.parts) {
-                        const textPart = msgDetail.data.payload.parts.find(part => 
-                            part.mimeType === 'text/plain' && part.body?.data
-                        );
-                        if (textPart) {
-                            bodyText = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
-                        }
-                    }
+                    // Get email body content (use helper to handle base64url and multipart)
+                    let bodyText = extractBodyFromPayload(msgDetail.data.payload || {});
+                    // Truncate very large bodies to protect DB size
+                    const MAX_BODY = 20000;
+                    const storedBody = bodyText && bodyText.length > MAX_BODY ? bodyText.slice(0, MAX_BODY) + '\n\n[truncated]' : bodyText;
 
                     mails.push({
-                        id: message.id,
+                        id: msgDetail.data.id || message.id,
+                        threadId: msgDetail.data.threadId,
                         subject,
                         from,
                         date,
                         snippet: msgDetail.data.snippet,
-                        body: bodyText
+                        body: storedBody
                     });
 
                     console.log(`📧 PROCESSED STANDALONE EMAIL:`, {
@@ -329,30 +368,22 @@ router.post('/sync', async (req, res) => {
                     const from = headers.find(h => h.name === 'From')?.value || 'Unknown Sender';
                     const date = headers.find(h => h.name === 'Date')?.value || new Date().toISOString();
 
-                    // Get email body content
-                    let bodyText = '';
-                    if (msgDetail.data.payload?.body?.data) {
-                        bodyText = Buffer.from(msgDetail.data.payload.body.data, 'base64').toString('utf-8');
-                    } else if (msgDetail.data.payload?.parts) {
-                        // For multipart messages, find text/plain part
-                        const textPart = msgDetail.data.payload.parts.find(part => 
-                            part.mimeType === 'text/plain' && part.body?.data
-                        );
-                        if (textPart) {
-                            bodyText = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
-                        }
-                    }
+                    // Get email body content using helper to support base64url and multipart
+                    let bodyText = extractBodyFromPayload(msgDetail.data.payload || {});
+                    const MAX_BODY = 20000;
+                    const storedBody = bodyText && bodyText.length > MAX_BODY ? bodyText.slice(0, MAX_BODY) + '\n\n[truncated]' : bodyText;
 
                     const mailData = {
-                        id: message.id,
+                        id: msgDetail.data.id || message.id,
+                        threadId: msgDetail.data.threadId,
                         subject,
                         from,
                         date,
                         snippet: msgDetail.data.snippet,
-                        body: bodyText
+                        body: storedBody
                     };
 
-                    console.log(`📧 PROCESSED EMAIL DATA:`, JSON.stringify(mailData, null, 2));
+                    console.log(`📧 PROCESSED EMAIL DATA:`, JSON.stringify({ id: mailData.id, subject: mailData.subject, from: mailData.from, snippet: mailData.snippet, bodyPreview: (mailData.body || '').substring(0,200) }, null, 2));
 
                     mails.push(mailData);
                 } catch (msgError) {
@@ -440,6 +471,194 @@ router.get('/status', async (req, res) => {
     } catch (error) {
         console.error('Status fetch error:', error);
         res.status(500).json({ message: 'Failed to fetch sync status' });
+    }
+});
+
+// AI Analysis - Convert meeting emails to tasks
+router.post('/analyze-meetings', async (req, res) => {
+    try {
+        const uid = req.headers['x-client-uid'];
+        
+        if (!uid) {
+            return res.status(401).json({ message: 'Missing X-Client-Uid header' });
+        }
+
+        console.log('🤖 STARTING AI MEETING ANALYSIS FOR USER:', uid);
+
+        // Fetch user sync data with emails from MongoDB
+        const userSync = await UserSync.findOne({ uid });
+        if (!userSync) {
+            return res.status(404).json({ message: 'User not found in sync data' });
+        }
+
+        if (!userSync.mails || userSync.mails.length === 0) {
+            return res.status(404).json({ message: 'No emails found to analyze. Please sync Gmail first.' });
+        }
+
+        console.log(`📧 FETCHED ${userSync.mails.length} EMAILS FROM MONGODB FOR ANALYSIS`);
+        console.log('📧 EMAIL DATA FROM DB:', JSON.stringify(userSync.mails.slice(0, 2), null, 2)); // Log first 2 emails for debugging
+
+        // Use Gemini AI to analyze emails directly from database
+        let analysisResult;
+        try {
+            console.log('🔄 SENDING EMAILS TO GEMINI AI FOR ANALYSIS...');
+            analysisResult = await geminiService.analyzeMeetingEmails(userSync.mails);
+            console.log('✅ Gemini AI analysis completed successfully');
+        } catch (aiError) {
+            console.warn('⚠️ Gemini AI analysis failed, using enhanced fallback method:', aiError.message);
+            analysisResult = geminiService.fallbackAnalysis(userSync.mails);
+        }
+
+        console.log('🔍 AI ANALYSIS RESULTS:', JSON.stringify(analysisResult, null, 2));
+
+        const meetingTasks = analysisResult.meetings.filter(m => m.isMeeting);
+        
+        if (meetingTasks.length === 0) {
+            return res.json({ 
+                message: 'AI found no meetings in the analyzed emails',
+                analyzed: userSync.mails.length,
+                meetings: [],
+                tasksCreated: 0
+            });
+        }
+
+        console.log(`🎯 AI IDENTIFIED ${meetingTasks.length} MEETINGS OUT OF ${userSync.mails.length} EMAILS`);
+
+        // Ensure MEETINGS folder exists
+        let meetingsFolder = await Folder.findOne({ owner: uid, name: 'MEETINGS' });
+        if (!meetingsFolder) {
+            console.log('📁 Creating MEETINGS folder automatically');
+            meetingsFolder = await Folder.create({
+                name: 'MEETINGS',
+                owner: uid,
+                icon: '🤝' // Meeting handshake emoji
+            });
+            console.log('✅ MEETINGS folder created with ID:', meetingsFolder._id);
+        } else {
+            console.log('📁 MEETINGS folder already exists with ID:', meetingsFolder._id);
+        }
+
+        // Let AI create tasks for detected meetings
+        const createdTasks = [];
+        for (const meetingData of meetingTasks) {
+            try {
+                // Check if task already exists for this email
+                const existingTask = await Tasks.findOne({ 
+                    owner: uid, 
+                    'metadata.emailId': meetingData.emailId,
+                    deletedAt: null // Only check non-deleted tasks
+                });
+                
+                if (existingTask) {
+                    console.log(`⏭️ Task already exists for email ${meetingData.emailId}, skipping...`);
+                    continue;
+                }
+
+                console.log(`🤖 AI CREATING TASK FOR EMAIL: ${meetingData.emailId}`);
+                console.log(`📝 TASK DETAILS:`, JSON.stringify(meetingData.task, null, 2));
+
+                // Parse meeting date for sorting (no priority for meetings)
+                const meetingDateTime = meetingData.task.meetingDetails?.scheduledDateTime ? 
+                    new Date(meetingData.task.meetingDetails.scheduledDateTime) : 
+                    (meetingData.task.meetingDate ? new Date(meetingData.task.meetingDate) : new Date());
+
+                // Format meeting date to dd-mm-yyyy efficiently
+                const formatMeetingDateToDMY = (dateStr) => {
+                    if (!dateStr) return '--'
+                    try {
+                        const date = new Date(dateStr)
+                        const day = date.getDate().toString().padStart(2, '0')
+                        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+                        const year = date.getFullYear()
+                        return `${day}-${month}-${year}`
+                    } catch {
+                        return '--'
+                    }
+                }
+
+                const task = await Tasks.create({
+                    title: meetingData.task.title,
+                    description: meetingData.task.description,
+                    folder: meetingsFolder._id,
+                    owner: uid,
+                    // NO PRIORITY for meeting tasks - they use date/time instead
+                    priority: undefined, // Explicitly set to undefined for meetings
+                    dueDate: meetingDateTime, // Use meeting date as due date for sorting
+                    currentStatus: 'pending',
+                    metadata: {
+                        emailId: meetingData.emailId,
+                        aiGenerated: true,
+                        confidence: meetingData.confidence,
+                        type: 'meeting', // Reference variable to identify meeting tasks efficiently
+                        meetingDate: formatMeetingDateToDMY(meetingData.task.meetingDate), // dd-mm-yyyy format
+                        meetingTime: meetingData.task.meetingTime || '--', // Show '--' if not available
+                        meetingDetails: meetingData.task.meetingDetails,
+                        createdAt: new Date(),
+                        aiModel: 'gemini-2.0-flash'
+                    }
+                });
+
+                createdTasks.push(task);
+                console.log(`✅ AI SUCCESSFULLY CREATED MEETING TASK: "${task.title}" scheduled for ${meetingData.task.meetingTime || 'TBD'}`);
+            } catch (taskError) {
+                console.error(`❌ Failed to create AI task for email ${meetingData.emailId}:`, taskError);
+            }
+        }
+
+        // Sort created tasks by meeting date/time (ascending order - earliest first)
+        createdTasks.sort((a, b) => {
+            const dateA = a.dueDate || new Date();
+            const dateB = b.dueDate || new Date();
+            return dateA.getTime() - dateB.getTime();
+        });
+
+        console.log(`📅 Tasks sorted by meeting date/time - earliest meetings first`);
+
+        // Update user sync with analysis timestamp and results
+        await UserSync.findOneAndUpdate(
+            { uid },
+            { 
+                lastMeetingAnalysis: new Date(),
+                $push: {
+                    analysisHistory: {
+                        timestamp: new Date(),
+                        emailsAnalyzed: userSync.mails.length,
+                        meetingsDetected: meetingTasks.length,
+                        tasksCreated: createdTasks.length,
+                        aiModel: 'gemini-2.0-flash'
+                    }
+                }
+            }
+        );
+
+        console.log(`🎉 AI ANALYSIS COMPLETE: ${createdTasks.length} tasks created from ${meetingTasks.length} detected meetings`);
+
+        res.json({
+            message: 'AI meeting analysis completed successfully',
+            analyzed: userSync.mails.length,
+            meetingsDetected: meetingTasks.length,
+            tasksCreated: createdTasks.length,
+            meetings: meetingTasks,
+            createdTasks: createdTasks.map(t => ({
+                id: t._id,
+                title: t.title,
+                meetingDate: t.metadata?.meetingDate,
+                meetingTime: t.metadata?.meetingTime,
+                dueDate: t.dueDate,
+                confidence: t.metadata?.confidence,
+                meetingDetails: t.metadata?.meetingDetails
+            })),
+            meetingsFolder: {
+                id: meetingsFolder._id,
+                name: meetingsFolder.name
+            }
+        });
+    } catch (error) {
+        console.error('❌ AI Meeting analysis error:', error);
+        res.status(500).json({ 
+            message: 'Failed to analyze meetings with AI', 
+            error: error.message 
+        });
     }
 });
 
