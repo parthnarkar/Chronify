@@ -417,7 +417,7 @@ export default function AppContainer() {
   }
 
   async function deleteTask(id) {
-    if (!confirm('Delete this task?')) return
+    // Deletion confirmation is handled by the UI modal in TaskItem; proceed to delete
     try {
       await fetch(`/api/tasks/${id}`, { method: 'DELETE', headers: { 'X-Client-Uid': user?.uid } })
       setTasksByFolder((t) => ({ ...t, [activeFolder]: (t[activeFolder] || []).filter((x) => x.id !== id) }))

@@ -1,5 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import StatusPill from './StatusPill'
+
+// Delete Confirmation Modal Component
+function DeleteConfirmationModal({ isOpen, onClose, onConfirm, taskTitle }) {
+  if (!isOpen) return null
+
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose()
+    }
+  }
+
+  const modal = (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]" 
+      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+      onClick={handleBackdropClick}
+    >
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 relative z-[10000] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+            <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-1 12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 7m5-4h4m-7 4h10" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Delete Task</h3>
+            <p className="text-sm text-gray-500">This action cannot be undone</p>
+          </div>
+        </div>
+        
+        <p className="text-gray-700 mb-6">
+          Are you sure you want to delete "<span className="font-medium">{taskTitle}</span>"?
+        </p>
+        
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors"
+          >
+            Delete Task
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Render modal into document.body so it's not constrained by parent stacking contexts
+  if (typeof document !== 'undefined' && document.body) {
+    return createPortal(modal, document.body)
+  }
+
+  return modal
+}
 
 function priorityColor(priority) {
   if (priority === 'high') return 'bg-red-600'
@@ -18,7 +78,32 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
   const isAnimatingOut = animatingTask && animatingTask.id === task.id
   const animDirection = isAnimatingOut && animatingTask.to === 'completed' ? 'translate-x-6' : isAnimatingOut && animatingTask.to === 'pending' ? '-translate-x-6' : 'translate-x-0'
   const [open, setOpen] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
   const ref = useRef()
+
+  // Handle delete confirmation
+  const handleDeleteClick = () => {
+    setShowDeleteModal(true)
+  }
+
+  const handleDeleteConfirm = () => {
+    deleteTask(task.id)
+    setShowDeleteModal(false)
+  }
+
+  const handleDeleteCancel = () => {
+    setShowDeleteModal(false)
+  }
+
+  // Prevent background scroll when modal is open
+  useEffect(() => {
+    if (showDeleteModal) {
+      const prev = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = prev || '' }
+    }
+    return undefined
+  }, [showDeleteModal])
 
   // Format date to dd-mm-yyyy for meeting tasks
   const formatMeetingDate = (dateStr) => {
@@ -124,21 +209,30 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
           )}
 
           <div className="flex items-center gap-1">
-            <button onClick={() => editTask ? editTask(task, folderId) : alert('Edit Task')} title="Edit" className="p-1 rounded hover:bg-gray-100 cursor-pointer">
+            <button onClick={() => editTask && editTask(task, folderId)} title="Edit" className="p-1 rounded hover:bg-gray-100 cursor-pointer">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M20,16v4a2,2,0,0,1-2,2H4a2,2,0,0,1-2-2V6A2,2,0,0,1,4,4H8" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
                 <polygon fill="none" points="12.5 15.8 22 6.2 17.8 2 8.3 11.5 8 16 12.5 15.8" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} stroke="currentColor" />
               </svg>
             </button>
 
-            <button onClick={() => deleteTask(task.id)} title="Delete" className="p-1 rounded hover:bg-red-50 cursor-pointer">
+            <button onClick={handleDeleteClick} title="Delete" className="p-1 rounded hover:bg-red-50 cursor-pointer">
+              {/* clearer trash icon (heroicons-style) */}
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-1 12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 7m5-4h4m-7 4h10" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5a1 1 0 011-1h4a1 1 0 011 1v2h3a1 1 0 010 2h-1l-1 12a2 2 0 01-2 2H8a2 2 0 01-2-2L5 9H4a1 1 0 110-2h3V5zM10 11v6m4-6v6" />
               </svg>
             </button>
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal 
+        isOpen={showDeleteModal}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        taskTitle={task.title}
+      />
     </article>
   )
 }
