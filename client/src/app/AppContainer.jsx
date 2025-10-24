@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import Navbar from '../components/Navbar'
 import Dashboard from '../pages/Dashboard'
+import Profile from '../pages/Profile'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import PrivateRoute from '../components/PrivateRoute'
 import Login from '../components/Login'
@@ -132,6 +133,7 @@ export default function AppContainer() {
 
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
           <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} toggleStatus={toggleStatus} deleteTask={deleteTask} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} /></PrivateRoute>} />
         </Routes>
       </div>

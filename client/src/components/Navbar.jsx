@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 // IconPlus intentionally not used here
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function Navbar({ mobileOpen, setMobileOpen }) {
@@ -60,19 +60,21 @@ export default function Navbar({ mobileOpen, setMobileOpen }) {
             <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <h1 className="text-2xl font-semibold tracking-tight">Chronify</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          <Link to="/" className="text-inherit no-underline">Chronify</Link>
+        </h1>
       </div>
       <div className="relative">
         {/* Profile button */}
         <button onClick={() => setMenuOpen((s) => !s)} className="flex items-center gap-2 p-1 rounded-md hover:bg-gray-50">
-          <img src={photoSrc} alt="profile" className="w-8 h-8 rounded-full object-cover" onError={(e)=>{ console.warn('[Navbar] avatar failed to load, falling back', e?.target?.src); e.target.onerror=null; e.target.src='/user-profile.png'}} />
+          <img src={photoSrc} alt="profile" className="w-10 h-10 rounded-full object-cover" onError={(e)=>{ console.warn('[Navbar] avatar failed to load, falling back', e?.target?.src); e.target.onerror=null; e.target.src='/user-profile.png'}} />
         </button>
 
         {/* Dropdown menu */}
         {menuOpen && (
           <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-100 rounded-md shadow-lg z-20">
             <div className="px-3 py-2">
-              <button onClick={() => { /* view profile placeholder */ setMenuOpen(false) }} className="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-50">View Profile</button>
+              <button onClick={() => { setMenuOpen(false); navigate('/profile') }} className="w-full text-left px-2 py-2 text-sm text-gray-700 hover:bg-gray-50">View Profile</button>
               <hr className="my-1" />
               <button onClick={handleLogout} className="w-full text-left px-2 py-2 text-sm text-red-600 hover:bg-red-50">Logout</button>
             </div>
