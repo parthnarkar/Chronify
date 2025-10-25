@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { usePWA } from '../context/PWAContext'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import LoadingScreen from '../components/LoadingScreen'
+import SyncStatusBar from '../components/SyncStatusBar'
 
 export default function Profile() {
-  const { user, loading } = useAuth()
+  const { user, loading, offlineDataService } = useAuth()
+  const { isOnline, syncStatus, forceSync } = usePWA()
   const navigate = useNavigate()
   const [photoSrc, setPhotoSrc] = useState('/user-profile.png')
 
@@ -33,36 +36,44 @@ export default function Profile() {
 
   // Fetch tasks and folders for current user and compute stats
   useEffect(() => {
-    if (!user) return
+    if (!user || !offlineDataService) return
     let cancelled = false
+    
     async function load() {
       setLoadingStats(true)
       setError(null)
       try {
-        const headers = user ? { 'X-Client-Uid': user.uid, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
-
-        // Fetch tasks and folders from server (MongoDB-backed)
-        const [tRes, fRes, statusRes] = await Promise.all([
-          fetch('/api/tasks', { headers }),
-          fetch('/api/folders', { headers }),
-          fetch('/api/google/status', { headers })
+        // Fetch tasks and folders from offline service (works online/offline)
+        const [tasksResult, foldersResult] = await Promise.all([
+          offlineDataService.getTasks(),
+          offlineDataService.getFolders()
         ])
 
-        if (!tRes.ok) throw new Error('Failed to fetch tasks')
-        if (!fRes.ok) throw new Error('Failed to fetch folders')
-
-        const tasksData = await tRes.json()
-        const foldersData = await fRes.json()
-
         if (!cancelled) {
-          setTasks(Array.isArray(tasksData) ? tasksData : tasksData.tasks || [])
-          setFolders(Array.isArray(foldersData) ? foldersData : foldersData.folders || [])
+          if (tasksResult.success) {
+            setTasks(tasksResult.data || [])
+          }
+          if (foldersResult.success) {
+            setFolders(foldersResult.data || [])
+          }
+          
+          if (!tasksResult.success || !foldersResult.success) {
+            setError('Failed to load some data')
+          }
         }
 
-        // Google sync status (stored in MongoDB UserSync collection)
-        if (statusRes && statusRes.ok) {
-          const sd = await statusRes.json()
-          if (!cancelled) setSyncData({ connected: !!sd.connected, events: sd.events || [], mails: sd.mails || [], lastSynced: sd.lastSynced || null, syncErrors: sd.syncErrors || [] })
+        // Google sync status (try to fetch if online)
+        if (isOnline) {
+          try {
+            const headers = { 'X-Client-Uid': user.uid, 'Content-Type': 'application/json' }
+            const statusRes = await fetch('/api/google/status', { headers })
+            if (statusRes && statusRes.ok && !cancelled) {
+              const sd = await statusRes.json()
+              setSyncData({ connected: !!sd.connected, events: sd.events || [], mails: sd.mails || [], lastSynced: sd.lastSynced || null, syncErrors: sd.syncErrors || [] })
+            }
+          } catch (e) {
+            console.log('Could not fetch Google sync status:', e.message)
+          }
         }
       } catch (e) {
         if (!cancelled) setError(e.message)
@@ -70,9 +81,10 @@ export default function Profile() {
         if (!cancelled) setLoadingStats(false)
       }
     }
+    
     load()
     return () => { cancelled = true }
-  }, [user])
+  }, [user, offlineDataService, isOnline])
 
   // Show aesthetic loading screen while auth or data is loading
   if (loading || loadingStats) {
@@ -189,6 +201,15 @@ export default function Profile() {
           visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
         }}
       >
+        {/* PWA Sync Status Bar */}
+        <motion.div variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}>
+          <SyncStatusBar 
+            isOnline={isOnline} 
+            syncStatus={syncStatus} 
+            onForceSync={forceSync}
+          />
+        </motion.div>
+
         <motion.div className="flex items-start gap-6" variants={{ hidden: { opacity: 0, y: 6 }, visible: { opacity: 1, y: 0 } }}>
           <img src={photoSrc} alt="profile" className="w-24 h-24 rounded-full object-cover border" onError={(e)=>{ e.target.onerror=null; e.target.src='/user-profile.png' }} />
           <div className="flex-1">

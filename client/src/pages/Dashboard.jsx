@@ -5,8 +5,8 @@ import IconPlus from '../components/IconPlus'
 import SyncStatusBar from '../components/SyncStatusBar'
 import { usePWA } from '../context/PWAContext'
 
-export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, editFolder, toggleStatus, deleteTask, changePriority, mobileOpen, setMobileOpen, animatingTask, deleteFolder, syncData, onGoogleSync, onAIAnalysis, aiAnalysisData, isOnline, syncStatus }) {
-  const { forceSync } = usePWA()
+export default function Dashboard({ folders, tasksByFolder, activeFolder, setActiveFolder, addFolder, addTask, editTask, editFolder, toggleStatus, deleteTask, changePriority, mobileOpen, setMobileOpen, animatingTask, deleteFolder, syncData, onGoogleSync, onAIAnalysis, aiAnalysisData }) {
+  const { isOnline, syncStatus, forceSync } = usePWA()
   const activeFolderObj = folders.find((x) => x.id === activeFolder)
   let tasks = []
   if (activeFolderObj && activeFolderObj.name === 'All Tasks') {
@@ -106,7 +106,7 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
         </div>
 
         <div className="space-y-6">
-          {/* Sync Status Bar */}
+          {/* PWA Sync Status Bar */}
           <SyncStatusBar 
             isOnline={isOnline} 
             syncStatus={syncStatus} 
@@ -131,12 +131,7 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
               </div>
               <div className="flex gap-2">
                 <button 
-                  onClick={async () => {
-                    // First perform Google sync
-                    await onGoogleSync();
-                    // Then perform AI analysis
-                    onAIAnalysis();
-                  }}
+                  onClick={onGoogleSync}
                   disabled={syncData.syncing || aiAnalysisData?.analyzing || !syncData.connected}
                   className={`px-3 py-1.5 text-xs rounded-md font-medium cursor-pointer ${
                     syncData.connected 

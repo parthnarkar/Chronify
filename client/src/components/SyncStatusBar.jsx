@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
+import { getSyncService } from '../services/syncService';
 
 export default function SyncStatusBar({ isOnline, syncStatus, onForceSync }) {
   const { isSyncing, hasUnsyncedChanges, unsyncedCount, lastSync } = syncStatus;
@@ -25,6 +26,57 @@ export default function SyncStatusBar({ isOnline, syncStatus, onForceSync }) {
   const handleForceSync = () => {
     if (isOnline && !isSyncing && onForceSync) {
       onForceSync();
+    }
+  };
+
+  // Debug function to check and clear sync queue
+  const debugSyncQueue = () => {
+    const syncService = getSyncService();
+    const queue = syncService.debugSyncQueue();
+    console.log('🔍 Current sync queue:', queue);
+    
+    if (queue.length > 0) {
+      const offlineItems = queue.filter(item => item.data._id && item.data._id.startsWith('offline_'));
+      const regularItems = queue.filter(item => !item.data._id || !item.data._id.startsWith('offline_'));
+      
+      console.log(`📊 Queue breakdown: ${offlineItems.length} offline items, ${regularItems.length} regular items`);
+      
+      const problematicItems = queue.filter(item => 
+        (item.operation === 'UPDATE_TASK' && item.data._id.startsWith('offline_')) ||
+        (item.operation === 'UPDATE_TASK' && !item.data._id.startsWith('offline_') && item.retries && item.retries >= 3)
+      );
+      
+      const message = `Found ${queue.length} items in sync queue:\n` +
+        `• ${offlineItems.length} offline items (need CREATE)\n` +
+        `• ${regularItems.length} regular items (need UPDATE)\n` +
+        `• ${problematicItems.length} problematic items (stuck)\n\n` +
+        `Options:\n` +
+        `• OK: Force sync now\n` +
+        `• Cancel: Clear queue (mark as synced)`;
+        
+      const shouldSync = window.confirm(message);
+      
+      if (shouldSync) {
+        // Force sync
+        console.log('🔄 Starting force sync for', queue.length, 'items...');
+        console.log('📋 Queue items to sync:', queue.map(item => ({
+          operation: item.operation,
+          taskId: item.data._id,
+          title: item.data.title
+        })));
+        handleForceSync();
+      } else {
+        // Clear queue
+        const clearMessage = 'This will clear all sync queue items and mark them as synced. Are you sure?';
+        if (window.confirm(clearMessage)) {
+          syncService.clearSyncQueue();
+          console.log('🗑️ Sync queue cleared manually');
+          window.location.reload(); // Refresh to update UI
+        }
+      }
+    } else {
+      console.log('✅ Sync queue is empty');
+      alert('Sync queue is empty - no pending operations');
     }
   };
 
@@ -65,37 +117,34 @@ export default function SyncStatusBar({ isOnline, syncStatus, onForceSync }) {
           )}
         </div>
 
-        {/* Sync Button */}
-        <button
-          onClick={handleForceSync}
-          disabled={!isOnline || isSyncing}
-          className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
-            isOnline && !isSyncing
-              ? 'bg-blue-600 text-white hover:bg-blue-700'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-          title={
-            !isOnline ? 'Cannot sync while offline' :
-            isSyncing ? 'Sync in progress...' :
-            'Force sync now'
-          }
-        >
-          {isSyncing ? (
-            <>
-              <svg className="w-3 h-3 animate-spin inline mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M4 2a2 2 0 00-2 2v11a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2H4zm0 2h12v11H4V4z" clipRule="evenodd" />
-              </svg>
-              Syncing
-            </>
-          ) : (
-            <>
-              <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Sync
-            </>
-          )}
-        </button>
+        {/* Sync Buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleForceSync}
+            disabled={!isOnline || isSyncing}
+            className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${
+              isOnline && !isSyncing
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+            title={
+              !isOnline ? 'Cannot sync while offline' :
+              isSyncing ? 'Sync in progress...' :
+              'Force sync now'
+            }
+          >
+            {isSyncing ? 'Syncing...' : 'Force Sync'}
+          </button>
+          
+          {/* Debug Button */}
+          <button
+            onClick={debugSyncQueue}
+            className="px-3 py-1.5 text-xs rounded-md font-medium bg-gray-600 text-white hover:bg-gray-700 transition-colors"
+            title="Debug sync queue (check console for details)"
+          >
+            Debug Queue
+          </button>
+        </div>
       </div>
 
       {/* Offline Mode Info */}

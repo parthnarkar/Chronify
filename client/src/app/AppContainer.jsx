@@ -5,6 +5,7 @@ import Profile from '../pages/Profile'
 import TaskDetails from '../pages/TaskDetails'
 import CreateTaskModal from '../components/CreateTaskModal'
 import CreateFolderModal from '../components/CreateFolderModal'
+import LoadingScreen from '../components/LoadingScreen'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import PrivateRoute from '../components/PrivateRoute'
 import Login from '../components/Login'
@@ -22,6 +23,7 @@ export default function AppContainer() {
   const [editingFolder, setEditingFolder] = useState(null)
   const [animatingTask, setAnimatingTask] = useState(null)
   const [showConfetti, setShowConfetti] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Google sync state
   const [syncData, setSyncData] = useState({ 
@@ -349,6 +351,7 @@ export default function AppContainer() {
           syncing: false,
           error: null
         }))
+        return true // Success indicator
       } else {
         const errorData = await res.json().catch(() => ({}))
         const errorMessage = errorData.message || `Sync failed with status ${res.status}`
@@ -370,6 +373,7 @@ export default function AppContainer() {
             error: errorMessage
           }))
         }
+        return false
       }
     } catch (e) {
       console.error('Failed to sync Google data', e)
@@ -378,6 +382,7 @@ export default function AppContainer() {
         syncing: false,
         error: 'Network error. Please try again.'
       }))
+      return false
     }
   }
 
@@ -406,39 +411,7 @@ export default function AppContainer() {
           error: null
         }))
         
-        // Refresh folders and tasks to show new MEETINGS folder and tasks
-        const [foldersRes, tasksRes] = await Promise.all([
-          fetch('/api/folders', { headers: { 'X-Client-Uid': user.uid } }),
-          fetch('/api/tasks', { headers: { 'X-Client-Uid': user.uid } })
-        ])
-        
-        if (foldersRes.ok) {
-          const raw = await foldersRes.json()
-          const fs = mapAndSortFolders(raw)
-          setFolders(fs)
-          
-          // Set active folder to MEETINGS if tasks were created
-          if (data.tasksCreated > 0) {
-            const meetingsFolder = fs.find(f => f.name === 'MEETINGS')
-            if (meetingsFolder) {
-              setActiveFolder(meetingsFolder.id)
-            }
-          }
-        }
-        
-        if (tasksRes.ok) {
-          const ts = await tasksRes.json()
-          const map = {}
-          ts.forEach(t => {
-            const fid = t.folder && t.folder._id ? t.folder._id : t.folder
-            const fidId = fid ? String(fid) : 'unknown'
-            if (!map[fidId]) map[fidId] = []
-            const due = t.dueDate ? (typeof t.dueDate === 'string' ? t.dueDate.split('T')[0] : new Date(t.dueDate).toISOString().split('T')[0]) : ''
-            map[fidId].push({ id: t._id, title: t.title, description: t.description, status: t.currentStatus || 'Pending', due, priority: t.priority || 'low' })
-          })
-          setTasksByFolder(map)
-        }
-        
+        return data.tasksCreated > 0 // Return true if tasks were created
       } else {
         const errorData = await res.json().catch(() => ({}))
         const errorMessage = errorData.message || `AI analysis failed with status ${res.status}`
@@ -448,6 +421,7 @@ export default function AppContainer() {
           analyzing: false,
           error: errorMessage
         }))
+        return false
       }
     } catch (e) {
       console.error('Failed to analyze meetings with AI', e)
@@ -456,6 +430,49 @@ export default function AppContainer() {
         analyzing: false,
         error: 'Network error. Please try again.'
       }))
+      return false
+    }
+  }
+
+  // Combined function for Google sync + AI analysis + page refresh
+  async function handleSyncAndAnalyze() {
+    if (!user) return
+    
+    try {
+      // First perform Google sync
+      console.log('🔄 Starting Google sync...')
+      const syncSuccess = await handleGoogleSync()
+      
+      if (syncSuccess) {
+        console.log('✅ Google sync completed, starting AI analysis...')
+        
+        // Then perform AI analysis
+        const tasksCreated = await handleAIAnalysis()
+        
+        if (tasksCreated) {
+          console.log('✅ AI analysis completed, refreshing page...')
+          
+          // Show loading screen and refresh page to display properly formatted tasks
+          setIsRefreshing(true)
+          
+          // Small delay to show loading screen
+          setTimeout(() => {
+            window.location.reload()
+          }, 1000)
+        } else {
+          console.log('ℹ️ No new tasks created from AI analysis')
+          // Just sync and show updated data without refresh
+          setSyncData(prev => ({ ...prev, syncing: false }))
+          setAiAnalysisData(prev => ({ ...prev, analyzing: false }))
+        }
+      } else {
+        console.log('❌ Google sync failed')
+      }
+    } catch (e) {
+      console.error('Failed to sync and analyze:', e)
+      setIsRefreshing(false)
+      setSyncData(prev => ({ ...prev, syncing: false }))
+      setAiAnalysisData(prev => ({ ...prev, analyzing: false }))
     }
   }
 
@@ -529,12 +546,21 @@ export default function AppContainer() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleGoogleSync} onAIAnalysis={handleAIAnalysis} aiAnalysisData={aiAnalysisData} isOnline={isOnline} syncStatus={syncStatus} /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><Dashboard folders={folders} tasksByFolder={tasksByFolder} activeFolder={activeFolder} setActiveFolder={setActiveFolder} addFolder={addFolder} addTask={addTask} editTask={openEditTask} editFolder={openEditFolder} toggleStatus={toggleStatus} deleteTask={deleteTask} changePriority={handleChangePriority} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} animatingTask={animatingTask} deleteFolder={handleDeleteFolder} syncData={syncData} onGoogleSync={handleSyncAndAnalyze} onAIAnalysis={handleAIAnalysis} aiAnalysisData={aiAnalysisData} /></PrivateRoute>} />
           <Route path="/:taskId" element={<PrivateRoute><TaskDetails /></PrivateRoute>} />
         </Routes>
         {/* Modals */}
         <CreateTaskModal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditingTask(null) }} onCreate={handleCreateTask} onUpdate={handleUpdateTask} initial={editingTask} folders={folders} activeFolder={activeFolder} />
-  <CreateFolderModal open={showFolderModal} onClose={() => { setShowFolderModal(false); setEditingFolder(null) }} onCreate={handleCreateFolder} onUpdate={handleUpdateFolder} initial={editingFolder} />
+        <CreateFolderModal open={showFolderModal} onClose={() => { setShowFolderModal(false); setEditingFolder(null) }} onCreate={handleCreateFolder} onUpdate={handleUpdateFolder} initial={editingFolder} />
+        
+        {/* Loading Screen during refresh */}
+        {isRefreshing && (
+          <LoadingScreen 
+            title="Syncing Complete!" 
+            subtitle="Refreshing to display meeting tasks..." 
+          />
+        )}
+        
         {showConfetti && <ConfettiOverlay />}
       </div>
     </div>

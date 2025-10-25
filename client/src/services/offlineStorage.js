@@ -391,6 +391,21 @@ class OfflineStorage {
     localStorage.setItem(this.storageKeys.syncQueue, JSON.stringify([]));
   }
 
+  // Update sync queue item (for retry counts, etc.)
+  updateSyncQueueItem(updatedItem) {
+    try {
+      const syncQueue = JSON.parse(localStorage.getItem(this.storageKeys.syncQueue) || '[]');
+      const itemIndex = syncQueue.findIndex(item => item.id === updatedItem.id);
+      
+      if (itemIndex !== -1) {
+        syncQueue[itemIndex] = updatedItem;
+        localStorage.setItem(this.storageKeys.syncQueue, JSON.stringify(syncQueue));
+      }
+    } catch (error) {
+      console.error('Error updating sync queue item:', error);
+    }
+  }
+
   // Mark item as synced
   markAsSynced(itemType, itemId, serverData = null) {
     try {

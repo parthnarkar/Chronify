@@ -326,7 +326,7 @@ class OfflineDataService {
 
   // Force sync
   async forceSync() {
-    return await this.syncService.forcSync();
+    return await this.syncService.forceSync();
   }
 
   // Subscribe to sync events

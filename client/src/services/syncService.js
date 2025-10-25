@@ -193,6 +193,7 @@ class SyncService {
     }
 
     console.log('🔄 Starting sync process...');
+    console.log('📋 Current sync queue:', this.offlineStorage.getSyncQueue());
     this.syncInProgress = true;
 
     try {
@@ -252,7 +253,7 @@ class SyncService {
 
   // Sync local changes to server
   async syncLocalChangesToServer() {
-    const syncQueue = this.offlineStorage.getSyncQueue();
+    let syncQueue = this.offlineStorage.getSyncQueue();
     
     if (syncQueue.length === 0) {
       console.log('No local changes to sync');
@@ -260,6 +261,14 @@ class SyncService {
     }
 
     console.log(`Syncing ${syncQueue.length} local changes...`);
+
+    // Sort queue to process CREATE operations before UPDATE operations for the same item
+    syncQueue = this.sortSyncQueue(syncQueue);
+
+    // Remove duplicates - keep only the latest operation for each item
+    syncQueue = this.deduplicateSyncQueue(syncQueue);
+
+    console.log(`Processing ${syncQueue.length} unique operations after deduplication`);
 
     const results = await Promise.allSettled(
       syncQueue.map(item => this.processSyncQueueItem(item))
@@ -271,6 +280,7 @@ class SyncService {
       
       if (result.status === 'fulfilled') {
         // Success - remove from queue and mark as synced
+        console.log(`✅ Sync success for ${queueItem.operation}:`, queueItem.id);
         this.offlineStorage.removeFromSyncQueue(queueItem.id);
         
         if (result.value && result.value.itemType && result.value.itemId) {
@@ -279,15 +289,172 @@ class SyncService {
             result.value.itemId, 
             result.value.serverData
           );
+          
+          // If this was an offline item that got a new server ID, update any remaining queue items
+          if (result.value.itemId.startsWith('offline_') && result.value.serverData && result.value.serverData._id !== result.value.itemId) {
+            this.updateQueueItemIds(result.value.itemId, result.value.serverData._id);
+          }
         }
       } else {
         // Failed - increment retry count
-        console.error('Sync item failed:', queueItem, result.reason);
+        console.error('❌ Sync item failed:', queueItem.operation, queueItem.id, result.reason);
         
-        // TODO: Implement retry logic with exponential backoff
-        // For now, we'll keep it in the queue for next sync attempt
+        // Increment retry count
+        queueItem.retries = (queueItem.retries || 0) + 1;
+        
+        // If max retries exceeded, remove from queue
+        if (queueItem.retries >= (queueItem.maxRetries || 3)) {
+          console.warn(`⚠️ Removing sync item after ${queueItem.retries} failed attempts:`, queueItem.id);
+          this.offlineStorage.removeFromSyncQueue(queueItem.id);
+        } else {
+          console.log(`🔄 Retry ${queueItem.retries}/${queueItem.maxRetries} for sync item:`, queueItem.id);
+          // Update the queue item with new retry count
+          this.offlineStorage.updateSyncQueueItem(queueItem);
+        }
       }
     });
+  }
+
+  // Sort sync queue to ensure proper operation order
+  sortSyncQueue(syncQueue) {
+    return syncQueue.sort((a, b) => {
+      // Sort by timestamp first
+      const timeA = new Date(a.timestamp).getTime();
+      const timeB = new Date(b.timestamp).getTime();
+      
+      // If same item, prioritize CREATE over UPDATE over DELETE
+      if (a.data._id === b.data._id) {
+        const operationPriority = {
+          'CREATE_TASK': 1,
+          'CREATE_FOLDER': 1,
+          'UPDATE_TASK': 2,
+          'UPDATE_FOLDER': 2,
+          'DELETE_TASK': 3,
+          'DELETE_FOLDER_ONLY': 3,
+          'DELETE_FOLDER_WITH_TASKS': 3
+        };
+        
+        return (operationPriority[a.operation] || 999) - (operationPriority[b.operation] || 999);
+      }
+      
+      return timeA - timeB;
+    });
+  }
+
+  // Remove duplicate operations for the same item, keeping only the necessary operations
+  deduplicateSyncQueue(syncQueue) {
+    const itemOperations = new Map();
+    
+    // Group operations by item ID and type
+    syncQueue.forEach(item => {
+      const itemId = item.data._id;
+      const itemType = item.operation.includes('TASK') ? 'task' : 'folder';
+      const key = `${itemType}:${itemId}`;
+      
+      if (!itemOperations.has(key)) {
+        itemOperations.set(key, []);
+      }
+      itemOperations.get(key).push(item);
+    });
+    
+    // For each item, keep only the necessary operations
+    const deduplicated = [];
+    
+    itemOperations.forEach((operations, key) => {
+      if (operations.length === 1) {
+        const singleOp = operations[0];
+        
+        // Skip DELETE operations for offline items that haven't been synced
+        if (singleOp.operation.startsWith('DELETE') && singleOp.data._id.startsWith('offline_')) {
+          console.log(`⚠️ Skipping DELETE for offline item that was never synced:`, singleOp.data._id);
+          return;
+        }
+        
+        deduplicated.push(singleOp);
+        return;
+      }
+      
+      // Sort operations by timestamp
+      operations.sort((a, b) => {
+        const timeA = new Date(a.timestamp).getTime();
+        const timeB = new Date(b.timestamp).getTime();
+        return timeA - timeB;
+      });
+      
+      const hasCreate = operations.some(op => op.operation.startsWith('CREATE'));
+      const hasDelete = operations.some(op => op.operation.startsWith('DELETE'));
+      const isOfflineItem = operations[0].data._id.startsWith('offline_');
+      
+      // Special handling for offline items
+      if (isOfflineItem) {
+        if (hasDelete) {
+          // If offline item was created then deleted, skip entirely (never existed on server)
+          console.log(`⚠️ Skipping offline item that was created and deleted locally:`, operations[0].data._id);
+          return;
+        }
+        
+        if (hasCreate) {
+          // For offline items, always use CREATE with latest data from any updates
+          const createOp = operations.find(op => op.operation.startsWith('CREATE'));
+          const latestOp = operations[operations.length - 1];
+          
+          // Merge create operation data with latest updates
+          const mergedData = { ...createOp.data };
+          
+          // Apply any updates that happened after creation
+          operations.forEach(op => {
+            if (op.operation === 'UPDATE_TASK' || op.operation === 'UPDATE_FOLDER') {
+              Object.assign(mergedData, op.data);
+            }
+          });
+          
+          deduplicated.push({
+            ...createOp,
+            data: mergedData
+          });
+          return;
+        } else {
+          // Only UPDATE operations for offline item - this means the item was created 
+          // but CREATE operation was already processed. Convert to CREATE.
+          const latestOp = operations[operations.length - 1];
+          const localTask = this.offlineStorage.getTaskById(latestOp.data._id);
+          
+          if (localTask && (!localTask._localSync || !localTask._localSync.synced)) {
+            console.log(`🔄 Converting UPDATE to CREATE for unsynced offline item:`, latestOp.data._id);
+            deduplicated.push({
+              id: latestOp.id,
+              operation: latestOp.operation.replace('UPDATE', 'CREATE'),
+              data: localTask,
+              timestamp: latestOp.timestamp,
+              retries: latestOp.retries,
+              maxRetries: latestOp.maxRetries
+            });
+            return;
+          }
+        }
+      }
+      
+      // For non-offline items (synced items)
+      if (hasDelete) {
+        // If item was deleted, only keep the DELETE operation
+        const deleteOp = operations.find(op => op.operation.startsWith('DELETE'));
+        deduplicated.push(deleteOp);
+      } else if (hasCreate) {
+        // If there's CREATE, use it with latest data
+        const createOp = operations.find(op => op.operation.startsWith('CREATE'));
+        const latestOp = operations[operations.length - 1];
+        
+        deduplicated.push({
+          ...createOp,
+          data: latestOp.data
+        });
+      } else {
+        // Only UPDATE operations, keep the latest
+        deduplicated.push(operations[operations.length - 1]);
+      }
+    });
+    
+    return deduplicated;
   }
 
   // Process individual sync queue item
@@ -328,20 +495,29 @@ class SyncService {
 
   // Sync individual operations
   async syncCreateTask(taskData) {
+    console.log(`🔄 Creating task on server: ${taskData.title} (ID: ${taskData._id})`);
+    
+    const cleanData = this.cleanDataForServer(taskData);
+    console.log('📤 Sending task data:', cleanData);
+    
     const response = await fetch('/api/tasks', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Client-Uid': this.offlineStorage.getUserId()
       },
-      body: JSON.stringify(this.cleanDataForServer(taskData))
+      body: JSON.stringify(cleanData)
     });
 
     if (!response.ok) {
-      throw new Error(`Server error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ Server error ${response.status}:`, errorText);
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
     }
 
     const serverTask = await response.json();
+    console.log(`✅ Task created successfully on server:`, serverTask);
+    
     return {
       itemType: 'task',
       itemId: taskData._id,
@@ -351,6 +527,25 @@ class SyncService {
 
   async syncUpdateTask(data) {
     const taskId = data._id;
+    
+    // Check if this is an offline-created task that hasn't been synced yet
+    if (taskId.startsWith('offline_')) {
+      const localTask = this.offlineStorage.getTaskById(taskId);
+      if (localTask && (!localTask._localSync || !localTask._localSync.synced)) {
+        // This is an offline task that needs to be created first, not updated
+        console.log('🔄 Converting UPDATE to CREATE for offline task:', taskId);
+        return await this.syncCreateTask(localTask);
+      }
+    }
+
+    // For tasks that were created offline but now have server IDs, check if they exist
+    const localTask = this.offlineStorage.getTaskById(taskId);
+    if (localTask && localTask._localSync && localTask._localSync.created && !taskId.startsWith('offline_')) {
+      // This task was created offline, got a server ID, but might not exist on server
+      // Try to update, if 404 then create
+      console.log('🔄 Trying to update task that was created offline:', taskId);
+    }
+
     const updates = { ...data };
     delete updates._id;
 
@@ -364,6 +559,11 @@ class SyncService {
     });
 
     if (!response.ok) {
+      // If 404, the task doesn't exist on server - try to create it
+      if (response.status === 404 && localTask) {
+        console.log('🔄 Task not found on server, converting UPDATE to CREATE:', taskId);
+        return await this.syncCreateTask(localTask);
+      }
       throw new Error(`Server error: ${response.status}`);
     }
 
@@ -376,6 +576,16 @@ class SyncService {
   }
 
   async syncDeleteTask(data) {
+    // Don't try to delete offline items that were never synced to server
+    if (data._id.startsWith('offline_')) {
+      console.log(`⚠️ Skipping DELETE for offline task that was never synced:`, data._id);
+      return {
+        itemType: 'task',
+        itemId: data._id,
+        serverData: null
+      };
+    }
+
     const response = await fetch(`/api/tasks/${data._id}`, {
       method: 'DELETE',
       headers: {
@@ -444,6 +654,16 @@ class SyncService {
   }
 
   async syncDeleteFolder(data, withTasks) {
+    // Don't try to delete offline items that were never synced to server
+    if (data._id.startsWith('offline_')) {
+      console.log(`⚠️ Skipping DELETE for offline folder that was never synced:`, data._id);
+      return {
+        itemType: 'folder',
+        itemId: data._id,
+        serverData: null
+      };
+    }
+
     const endpoint = withTasks 
       ? `/api/folders/folder-with-tasks/${data._id}`
       : `/api/folders/only-folder/${data._id}`;
@@ -490,7 +710,7 @@ class SyncService {
   }
 
   // Force sync (manual trigger)
-  async forcSync() {
+  async forceSync() {
     if (this.isOnline && !this.syncInProgress) {
       await this.syncWhenOnline();
     }
@@ -504,6 +724,41 @@ class SyncService {
   // Clear all data (for logout)
   clearAllData() {
     this.offlineStorage.clearAllData();
+  }
+
+  // Debug: Clear sync queue (for testing)
+  clearSyncQueue() {
+    this.offlineStorage.clearSyncQueue();
+    console.log('🗑️ Sync queue cleared');
+  }
+
+  // Debug: Get sync queue contents
+  debugSyncQueue() {
+    const queue = this.offlineStorage.getSyncQueue();
+    console.log('📋 Current sync queue:', queue);
+    return queue;
+  }
+
+  // Update queue item IDs when offline items get server IDs
+  updateQueueItemIds(oldId, newId) {
+    try {
+      const queue = this.offlineStorage.getSyncQueue();
+      let updated = false;
+      
+      queue.forEach(item => {
+        if (item.data._id === oldId) {
+          console.log(`🔄 Updating queue item ID: ${oldId} → ${newId}`);
+          item.data._id = newId;
+          updated = true;
+        }
+      });
+      
+      if (updated) {
+        localStorage.setItem('chronify_sync_queue', JSON.stringify(queue));
+      }
+    } catch (error) {
+      console.error('Error updating queue item IDs:', error);
+    }
   }
 }
 
