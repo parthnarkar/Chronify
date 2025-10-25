@@ -78,9 +78,28 @@ export default function TaskDetails() {
             <span className={`px-2 py-1 rounded text-xs ${priorityColor(task.priority)}`}>{(task.priority || 'low').toUpperCase()}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="px-3 py-2 bg-gray-100 rounded">Back</button>
-          <button onClick={toggleStatus} disabled={saving} className="px-3 py-2 bg-blue-600 text-white rounded">{saving ? 'Saving…' : 'Toggle Status'}</button>
+
+          {/* Toggle switch: preserves existing toggleStatus behavior but with modern UI */}
+          <div className="flex items-center gap-3">
+            <div
+              role="switch"
+              aria-checked={(task.currentStatus || task.status) === 'Completed'}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!saving) toggleStatus() } }}
+              onClick={() => { if (!saving) toggleStatus() }}
+              className={`relative inline-flex items-center h-7 w-14 rounded-full transition-colors cursor-pointer ${((task.currentStatus || task.status) === 'Completed') ? 'bg-green-500' : 'bg-gray-200'}`}
+              aria-label="Toggle task status"
+            >
+              <span className={`transform bg-white w-6 h-6 rounded-full shadow-md inline-block transition-transform ${((task.currentStatus || task.status) === 'Completed') ? 'translate-x-7' : 'translate-x-1'}`} />
+            </div>
+
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">{(task.currentStatus || task.status) === 'Completed' ? 'Completed' : 'Pending'}</span>
+              <span className="text-xs text-gray-500">{saving ? 'Saving…' : 'Click to toggle'}</span>
+            </div>
+          </div>
         </div>
       </div>
 
