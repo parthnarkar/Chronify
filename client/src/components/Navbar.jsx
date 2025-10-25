@@ -75,18 +75,29 @@ export default function Navbar({ mobileOpen, setMobileOpen }) {
   return (
     <header className="flex items-center justify-between py-6">
       <div className="flex items-center gap-3">
-        <button onClick={() => setMobileOpen((s) => !s)} className="md:hidden p-2 rounded-md hover:bg-gray-100">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-gray-700">
-            <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+        <button onClick={() => setMobileOpen((s) => !s)} className="md:hidden p-2 rounded-md hover:bg-gray-100 text-gray-700" aria-label="Toggle menu">
+          {/* Simplified icon: render a '<' character per request */}
+          <span className="text-xl font-medium leading-none">&lt;</span>
         </button>
         <div className="flex items-center gap-2 cursor-pointer">
           {location.pathname && location.pathname.startsWith('/profile') && (
             <button onClick={() => navigate(-1)} aria-label="Go back" className="cursor-pointer text-gray-600 hover:text-gray-800 text-xl font-medium">&lt;</button>
           )}
-          <h1 className="text-2xl font-semibold tracking-tight">
-            <Link to="/" className="text-inherit no-underline">Chronify</Link>
-          </h1>
+          {/* show the small SVG beside the title when on a single-segment path like /{task-id} */}
+          {(() => {
+            const pathParts = location.pathname.split('/').filter(Boolean)
+            const showTaskIcon = pathParts.length === 1 && location.pathname !== '/' && !location.pathname.startsWith('/profile')
+            return (
+              <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+                <Link to="/" className="text-inherit no-underline flex items-center">
+                  {showTaskIcon && (
+                    <span className="text-gray-700 mr-1.5 text-2xl font-medium leading-none">&lt;</span>
+                  )}
+                  Chronify
+                </Link>
+              </h1>
+            )
+          })()}
         </div>
       </div>
       <div
