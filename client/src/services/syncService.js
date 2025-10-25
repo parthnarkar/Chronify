@@ -198,7 +198,9 @@ class SyncService {
 
     try {
       // First, fetch latest data from server
+      console.log('🔄 Fetching server data...');
       const serverData = await this.fetchServerData();
+      console.log('🔄 Server data fetched:', { success: !!serverData });
       
       if (serverData) {
         // Merge server data with local data
@@ -227,10 +229,17 @@ class SyncService {
         'X-Client-Uid': this.offlineStorage.getUserId()
       };
 
+      console.log('🔄 Making API calls with headers:', headers);
+
       const [tasksResponse, foldersResponse] = await Promise.all([
         fetch('/api/tasks', { headers }),
         fetch('/api/folders', { headers })
       ]);
+
+      console.log('🔄 API responses:', { 
+        tasksStatus: tasksResponse.status, 
+        foldersStatus: foldersResponse.status 
+      });
 
       if (!tasksResponse.ok || !foldersResponse.ok) {
         throw new Error('Failed to fetch server data');
@@ -240,6 +249,27 @@ class SyncService {
         tasksResponse.json(),
         foldersResponse.json()
       ]);
+
+      // 🔍 DEBUG: Log fetched server data
+      console.log('🔍 FETCHED SERVER DATA:', {
+        tasks: tasks?.length || 0,
+        firstTask: tasks?.[0],
+        meetingTasks: tasks?.filter(t => t.metadata?.type === 'meeting') || [],
+        folders: foldersData?.folders?.length || foldersData?.length || 0
+      });
+
+      // Check if any meeting tasks exist and log their structure
+      const meetingTasks = tasks?.filter(t => t.metadata?.type === 'meeting') || [];
+      if (meetingTasks.length > 0) {
+        console.log('🔍 MEETING TASKS FROM SERVER:', meetingTasks.map(t => ({
+          id: t._id || t.id,
+          title: t.title,
+          dueDate: t.dueDate,
+          dueDateType: typeof t.dueDate,
+          metadata: t.metadata,
+          fullTask: t
+        })));
+      }
 
       return {
         tasks: tasks || [],

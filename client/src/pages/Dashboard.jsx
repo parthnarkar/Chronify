@@ -21,25 +21,17 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
     const meetingTasks = tasksToSort.filter(t => t.metadata?.type === 'meeting')
     const regularTasks = tasksToSort.filter(t => t.metadata?.type !== 'meeting')
 
-    // Sort meeting tasks by date (dd-mm-yyyy format)
+    // Sort meeting tasks by date using dueDate field
     meetingTasks.sort((a, b) => {
-      const dateA = a.metadata?.meetingDate || a.dueDate
-      const dateB = b.metadata?.meetingDate || b.dueDate
+      const dateA = a.dueDate
+      const dateB = b.dueDate
       
       if (!dateA && !dateB) return 0
       if (!dateA) return 1
       if (!dateB) return -1
       
-      // Parse dd-mm-yyyy format
-      const parseDate = (dateStr) => {
-        if (dateStr.includes('-')) {
-          const [day, month, year] = dateStr.split('-').map(Number)
-          return new Date(year, month - 1, day)
-        }
-        return new Date(dateStr)
-      }
-      
-      return parseDate(dateA).getTime() - parseDate(dateB).getTime()
+      // Both are dates, compare directly
+      return new Date(dateA).getTime() - new Date(dateB).getTime()
     })
 
     // Sort regular tasks by due date
@@ -63,22 +55,15 @@ export default function Dashboard({ folders, tasksByFolder, activeFolder, setAct
     sortMeetingTasks(tasks) : 
     tasks.sort((a, b) => {
       if (a.metadata?.type === 'meeting' && b.metadata?.type === 'meeting') {
-        const dateA = a.metadata?.meetingDate || a.dueDate
-        const dateB = b.metadata?.meetingDate || b.dueDate
+        const dateA = a.dueDate
+        const dateB = b.dueDate
         
         if (!dateA && !dateB) return 0
         if (!dateA) return 1
         if (!dateB) return -1
         
-        const parseDate = (dateStr) => {
-          if (dateStr.includes('-')) {
-            const [day, month, year] = dateStr.split('-').map(Number)
-            return new Date(year, month - 1, day)
-          }
-          return new Date(dateStr)
-        }
-        
-        return parseDate(dateA).getTime() - parseDate(dateB).getTime()
+        // Compare dueDate directly since they're proper Date objects
+        return new Date(dateA).getTime() - new Date(dateB).getTime()
       }
       return 0
     })

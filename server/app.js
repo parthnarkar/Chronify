@@ -4,6 +4,7 @@ import folderRoutes from './routes/folderRoutes.js';
 import tasksRoutes from './routes/tasksRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import googleRoutes from './routes/googleRoutes.js';
+import analyticsRoutes from './routes/analyticsRoutes.js';
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use('/api/folders', folderRoutes);
 app.use('/api/tasks', tasksRoutes);
 app.use('/api', authRoutes);
 app.use('/api/google', googleRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Avatar proxy to avoid blocked third-party image/resource issues in dev
 // Example: GET /api/avatar?u=<encoded image url>

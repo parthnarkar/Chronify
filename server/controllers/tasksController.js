@@ -54,6 +54,21 @@ export const getAllTasks = async (req, res) => {
 
     // only return non-deleted tasks
     const tasks = await Tasks.find({ owner, deletedAt: null }).populate("folder", "name"); //populate folder name
+    
+    // 🔍 DEBUG: Log returned tasks
+    console.log(`🔍 SERVER RETURNING ${tasks.length} TASKS FOR USER ${owner}`);
+    const meetingTasks = tasks.filter(t => t.metadata?.type === 'meeting');
+    if (meetingTasks.length > 0) {
+        console.log('🔍 MEETING TASKS FROM DATABASE:', meetingTasks.map(t => ({
+            id: t._id,
+            title: t.title,
+            dueDate: t.dueDate,
+            dueDateType: typeof t.dueDate,
+            dueDateValue: t.dueDate?.getTime ? t.dueDate.getTime() : 'not a date',
+            metadata: t.metadata
+        })));
+    }
+    
     res.json(tasks);
     }
     catch (error) {

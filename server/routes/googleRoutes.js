@@ -576,6 +576,48 @@ router.post('/analyze-meetings', async (req, res) => {
                     }
                 }
 
+                // Enhanced meeting time processing to ensure we get time even if not in main fields
+                let finalMeetingTime = meetingData.task.meetingTime || '--'
+                let finalMeetingDate = meetingData.task.meetingDate
+                
+                // If no meeting time from AI, try to extract from meetingDetails
+                if (finalMeetingTime === '--' || !finalMeetingTime) {
+                    if (meetingData.task.meetingDetails?.meetingTime) {
+                        finalMeetingTime = meetingData.task.meetingDetails.meetingTime
+                    } else {
+                        // Try to extract time from original email subject or snippet
+                        const emailText = userSync.mails.find(m => m.id === meetingData.emailId)
+                        if (emailText) {
+                            const fullText = `${emailText.subject} ${emailText.snippet}`.toLowerCase()
+                            const timePatterns = [
+                                /(\d+)\.(\d+)\s*(pm|am)/i,
+                                /(\d+):(\d+)\s*(pm|am)/i,
+                                /(\d+)\s*(pm|am)/i,
+                                /at\s+(\d+)\.(\d+)/i,
+                                /at\s+(\d+):(\d+)/i
+                            ]
+                            
+                            for (const pattern of timePatterns) {
+                                const match = fullText.match(pattern)
+                                if (match) {
+                                    if (match[3]) { // Has AM/PM
+                                        const hour = parseInt(match[1])
+                                        const minute = match[2] ? parseInt(match[2]) : 0
+                                        finalMeetingTime = `${hour}:${minute.toString().padStart(2, '0')} ${match[3].toUpperCase()}`
+                                    } else { // No AM/PM, format as 24h
+                                        const hour = parseInt(match[1])
+                                        const minute = match[2] ? parseInt(match[2]) : 0
+                                        finalMeetingTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                console.log(`📅 Final meeting details - Date: ${finalMeetingDate}, Time: ${finalMeetingTime}`)
+
                 const task = await Tasks.create({
                     title: meetingData.task.title,
                     description: meetingData.task.description,
@@ -590,9 +632,12 @@ router.post('/analyze-meetings', async (req, res) => {
                         aiGenerated: true,
                         confidence: meetingData.confidence,
                         type: 'meeting', // Reference variable to identify meeting tasks efficiently
-                        meetingDate: formatMeetingDateToDMY(meetingData.task.meetingDate), // dd-mm-yyyy format
-                        meetingTime: meetingData.task.meetingTime || '--', // Show '--' if not available
-                        meetingDetails: meetingData.task.meetingDetails,
+                        meetingDate: formatMeetingDateToDMY(finalMeetingDate), // dd-mm-yyyy format
+                        meetingTime: finalMeetingTime, // Enhanced time extraction
+                        meetingDetails: {
+                            ...meetingData.task.meetingDetails,
+                            meetingTime: finalMeetingTime // Update meetingDetails too
+                        },
                         createdAt: new Date(),
                         aiModel: 'gemini-2.0-flash'
                     }

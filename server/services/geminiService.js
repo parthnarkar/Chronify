@@ -155,6 +155,14 @@ TASK CREATION RULES:
 - Parse relative dates (today, tomorrow, next Monday, etc.)
 - Extract specific times from various formats (8:30, 8.30, eight-thirty, etc.)
 
+TIME EXTRACTION PRIORITY:
+1. Look for explicit times in subject line first: "Meeting at 8:30", "8 PM discussion"
+2. Scan email body/snippet for time patterns: "at 8.30", "9:00 PM", "eight thirty"
+3. Parse both 12-hour (8:30 AM/PM) and 24-hour (20:30) formats
+4. Handle variations: "8.30", "8:30", "eight-thirty", "half past eight"
+5. If no time found, set to "TBD" but still create the meeting task
+6. ALWAYS provide meetingTime in BOTH task level AND meetingDetails level
+
 EXAMPLE TRANSFORMATION:
 Input: "Meeting at 8:30 Today on Java Programming"
 Output Title: "Java Programming Meeting"
@@ -174,12 +182,12 @@ REQUIRED JSON RESPONSE FORMAT:
             "task": {
                 "title": "Professional Meeting Title",
                 "description": "Generate a smart, natural description based on the email subject and content. Write it as a brief summary of what the meeting is about, when it's happening (if mentioned), and any key details. Keep it conversational and informative without using structured format with emojis or sections.",
-                "meetingDate": "2025-10-24",
-                "meetingTime": "08:30:00",
+                "meetingDate": "24-10-2025",
+                "meetingTime": "8:30 AM",
                 "meetingDetails": {
                     "originalSubject": "Original email subject",
                     "scheduledDateTime": "2025-10-24T08:30:00",
-                    "meetingDate": "October 24, 2025",
+                    "meetingDate": "24-10-2025",
                     "meetingTime": "8:30 AM",
                     "participants": ["email addresses"],
                     "location": "TBD or extracted location",

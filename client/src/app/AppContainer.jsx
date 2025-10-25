@@ -434,7 +434,7 @@ export default function AppContainer() {
     }
   }
 
-  // Combined function for Google sync + AI analysis + page refresh
+  // Combined function for Google sync + AI analysis + data refresh
   async function handleSyncAndAnalyze() {
     if (!user) return
     
@@ -450,18 +450,47 @@ export default function AppContainer() {
         const tasksCreated = await handleAIAnalysis()
         
         if (tasksCreated) {
-          console.log('✅ AI analysis completed, refreshing page...')
+          console.log('✅ AI analysis completed, refreshing data...')
           
-          // Show loading screen and refresh page to display properly formatted tasks
+          // Show loading screen briefly for user feedback
           setIsRefreshing(true)
           
-          // Small delay to show loading screen
-          setTimeout(() => {
-            window.location.reload()
-          }, 1000)
+          // Force refresh all data from backend to get properly formatted tasks
+          setTimeout(async () => {
+            try {
+              // Refresh all folders and tasks data from backend
+              const [foldersResult, tasksResult] = await Promise.all([
+                offlineDataService.getFolders(),
+                offlineDataService.getTasks()
+              ])
+              
+              if (foldersResult.success && tasksResult.success) {
+                // Data will be automatically updated via the data change listener
+                console.log('📊 Data refreshed successfully - meeting tasks should now display properly')
+                
+                // Switch to MEETINGS folder if tasks were created there
+                const meetingsFolder = foldersResult.data.find(f => f.name === 'MEETINGS')
+                if (meetingsFolder && tasksCreated > 0) {
+                  console.log('📁 Switching to MEETINGS folder to show new tasks')
+                  setActiveFolder(meetingsFolder.id || meetingsFolder._id)
+                }
+              }
+              
+              // Hide loading screen
+              setIsRefreshing(false)
+              setSyncData(prev => ({ ...prev, syncing: false }))
+              setAiAnalysisData(prev => ({ ...prev, analyzing: false }))
+              
+            } catch (refreshError) {
+              console.error('Failed to refresh data:', refreshError)
+              setIsRefreshing(false)
+              setSyncData(prev => ({ ...prev, syncing: false }))
+              setAiAnalysisData(prev => ({ ...prev, analyzing: false }))
+            }
+          }, 800) // Brief delay for user feedback
         } else {
           console.log('ℹ️ No new tasks created from AI analysis')
-          // Just sync and show updated data without refresh
+          // Just update status without refresh
           setSyncData(prev => ({ ...prev, syncing: false }))
           setAiAnalysisData(prev => ({ ...prev, analyzing: false }))
         }

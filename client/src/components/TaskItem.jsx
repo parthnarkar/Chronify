@@ -75,6 +75,45 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
   // Efficient reference variable to identify meeting tasks
   const isMeetingTask = task.metadata?.type === 'meeting'
   
+  // 🔍 DEBUG: Log ALL tasks to see what we're working with
+  React.useEffect(() => {
+    console.log('🔍 ALL TASK DEBUG:', {
+      taskId: task.id || task._id,
+      title: task.title,
+      isMeetingTask,
+      dueDate: task.dueDate,
+      dueDateType: typeof task.dueDate,
+      dueDateParsed: task.dueDate ? new Date(task.dueDate) : null,
+      metadata: task.metadata,
+      metadataType: task.metadata?.type,
+      fullTask: task
+    })
+    
+    if (isMeetingTask) {
+      console.log('🔍 MEETING TASK DETECTED!');
+      
+      // Test the timestamp you provided from MongoDB
+      const testTimestamp = 1761274800000
+      const testDate = new Date(testTimestamp)
+      console.log('🔍 TEST TIMESTAMP 1761274800000:', {
+        timestamp: testTimestamp,
+        date: testDate,
+        formatMeetingDate: formatMeetingDate(testTimestamp),
+        formatMeetingTime: formatMeetingTime(testTimestamp),
+        dateString: testDate.toString(),
+        isoString: testDate.toISOString()
+      })
+      
+      // Test MongoDB date format too
+      const mongoDateFormat = { $date: { $numberLong: "1761274800000" } }
+      console.log('🔍 TEST MONGODB FORMAT:', {
+        mongoFormat: mongoDateFormat,
+        formatMeetingDate: formatMeetingDate(mongoDateFormat),
+        formatMeetingTime: formatMeetingTime(mongoDateFormat)
+      })
+    }
+  }, [task, isMeetingTask])
+  
   const accent = isMeetingTask ? 'bg-blue-600' : priorityColor(task.priority)
   const priorityTextColor = task.priority === 'medium' ? 'text-black' : 'text-white'
   const isAnimatingOut = animatingTask && animatingTask.id === task.id
@@ -117,22 +156,97 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
 
   // Format date to dd-mm-yyyy for meeting tasks
   const formatMeetingDate = (dateStr) => {
-    if (!dateStr) return '--'
     try {
-      // If already in dd-mm-yyyy format, return as is
-      if (dateStr.match(/^\d{2}-\d{2}-\d{4}$/)) return dateStr
+      console.log('🗓️ formatMeetingDate input:', { dateStr, type: typeof dateStr })
       
-      const date = new Date(dateStr)
+      if (!dateStr) {
+        console.log('🗓️ formatMeetingDate: No dateStr, returning --')
+        return '--'
+      }
+      
+      let date
+      if (typeof dateStr === 'string' && dateStr.includes('-')) {
+        // Already in dd-mm-yyyy format
+        console.log('🗓️ formatMeetingDate: Already formatted, returning as is')
+        return dateStr
+      } else {
+        // Convert from ISO, timestamp, or MongoDB date format
+        if (typeof dateStr === 'number') {
+          date = new Date(dateStr)
+        } else if (typeof dateStr === 'string') {
+          date = new Date(dateStr)
+        } else if (dateStr && typeof dateStr === 'object' && dateStr.$date) {
+          // Handle MongoDB extended JSON format: {"$date":{"$numberLong":"1761274800000"}}
+          const timestamp = parseInt(dateStr.$date.$numberLong || dateStr.$date)
+          date = new Date(timestamp)
+        } else {
+          date = new Date(dateStr)
+        }
+        console.log('🗓️ formatMeetingDate: Parsed date:', date)
+      }
+      
+      if (isNaN(date.getTime())) {
+        console.log('🗓️ formatMeetingDate: Invalid date, returning --')
+        return '--'
+      }
+      
       const day = date.getDate().toString().padStart(2, '0')
       const month = (date.getMonth() + 1).toString().padStart(2, '0')
       const year = date.getFullYear()
-      return `${day}-${month}-${year}`
-    } catch {
+      const result = `${day}-${month}-${year}`
+      
+      console.log('🗓️ formatMeetingDate result:', result)
+      return result
+    } catch (error) {
+      console.log('🗓️ formatMeetingDate error:', error)
       return '--'
     }
   }
 
-  // Format date for regular tasks (due date)
+  // Extract meeting time from dueDate for meeting tasks
+  const formatMeetingTime = (dateStr) => {
+    try {
+      console.log('⏰ formatMeetingTime input:', { dateStr, type: typeof dateStr })
+      
+      if (!dateStr) {
+        console.log('⏰ formatMeetingTime: No dateStr, returning --')
+        return '--'
+      }
+      
+      let date
+      if (typeof dateStr === 'number') {
+        date = new Date(dateStr)
+      } else if (typeof dateStr === 'string') {
+        date = new Date(dateStr)
+      } else if (dateStr && typeof dateStr === 'object' && dateStr.$date) {
+        // Handle MongoDB extended JSON format: {"$date":{"$numberLong":"1761274800000"}}
+        const timestamp = parseInt(dateStr.$date.$numberLong || dateStr.$date)
+        date = new Date(timestamp)
+      } else {
+        date = new Date(dateStr)
+      }
+      
+      console.log('⏰ formatMeetingTime: Parsed date:', date)
+      
+      if (isNaN(date.getTime())) {
+        console.log('⏰ formatMeetingTime: Invalid date, returning --')
+        return '--'
+      }
+      
+      // Format as HH:MM AM/PM
+      const hours = date.getHours()
+      const minutes = date.getMinutes()
+      const displayHours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours)
+      const period = hours >= 12 ? 'PM' : 'AM'
+      
+      const result = `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`
+      console.log('⏰ formatMeetingTime result:', result)
+      return result
+    } catch (error) {
+      console.log('⏰ formatMeetingTime error:', error)
+      return '--'
+    }
+  }  // Format date for regular tasks (due date)
   const formatDueDate = (dateStr) => {
     if (!dateStr) return '—'
     try {
@@ -244,16 +358,9 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
             // Meeting Date & Time for meeting tasks (NO PRIORITY)
             <>
               <div className="flex flex-col items-end md:items-center text-right md:text-left">
-                <span className="text-xs text-gray-400">Meeting Date</span>
-                <span className="text-sm text-gray-700 font-medium">
-                  {formatMeetingDate(task.metadata?.meetingDate)}
-                </span>
-              </div>
-              <div className="flex flex-col items-end md:items-center text-right md:text-left">
-                <span className="text-xs text-gray-400">Meeting Time</span>
-                <span className="text-sm text-gray-700 font-medium">
-                  {task.metadata?.meetingTime || '--'}
-                </span>
+                <span className="text-xs text-gray-400">Date of Meeting</span>
+                {/* Use same date source as TaskDetails.jsx: task.dueDate || task.due || '—' */}
+                <span className="text-sm text-gray-700">{task.dueDate || task.due || '—'}</span>
               </div>
             </>
           ) : (
@@ -261,7 +368,7 @@ export default function TaskItem({ task, toggleStatus, deleteTask, editTask, cha
             <>
               <div className="flex flex-col items-end md:items-center text-right md:text-left">
                 <span className="text-xs text-gray-400">Due</span>
-                <span className="text-sm text-gray-700">{formatDueDate(task.due) || '—'}</span>
+                <span className="text-sm text-gray-700">{formatDueDate(task.dueDate) || '—'}</span>
               </div>
 
               <div className="relative flex flex-col items-end md:items-center text-right md:text-left">

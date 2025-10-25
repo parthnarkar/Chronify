@@ -1,11 +1,16 @@
-const CACHE_NAME = 'chronify-v1';
+// Bump this value when you deploy a new client build to force the
+// service worker to install a fresh cache (e.g. 'chronify-v2').
+const CACHE_NAME = 'chronify-v2';
+
+// Keep static assets minimal and stable. Avoid caching /src/* in production
+// since build tooling emits hashed files — prefer caching index, manifest
+// and the compiled CSS/JS bundles produced by your build process.
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/src/main.jsx',
-  '/src/App.jsx',
-  '/src/index.css'
+  '/favicon.ico',
+  '/index.css'
 ];
 
 const API_CACHE_NAME = 'chronify-api-v1';
@@ -41,11 +46,13 @@ self.addEventListener('activate', (event) => {
               console.log('Service Worker: Deleting old cache:', cacheName);
               return caches.delete(cacheName);
             }
+            return null;
           })
         );
       })
       .then(() => {
         console.log('Service Worker: Activated successfully');
+        // Claim clients so the new SW starts controlling pages ASAP
         return self.clients.claim();
       })
   );
@@ -56,42 +63,47 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Handle API requests
+  // Handle API requests separately (network-first with cache fallback)
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(handleApiRequest(request));
     return;
   }
 
-  // Handle static assets and navigation requests
+  // For navigation requests (single-page app) use NETWORK-FIRST so index.html
+  // doesn't get stuck in an old cached version. Fallback to cache when offline.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          // Update the index.html cache with fresh content
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // For other static assets, use cache-first but still populate cache on fetch
   event.respondWith(
     caches.match(request)
       .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
+        if (cachedResponse) return cachedResponse;
         return fetch(request)
           .then((response) => {
             // Clone the response before caching
             const responseClone = response.clone();
-            
             // Cache successful responses
             if (response.status === 200) {
               caches.open(CACHE_NAME)
-                .then((cache) => {
-                  cache.put(request, responseClone);
-                });
+                .then((cache) => cache.put(request, responseClone));
             }
-            
             return response;
           })
-          .catch(() => {
-            // Return offline fallback for navigation requests
-            if (request.mode === 'navigate') {
-              return caches.match('/index.html');
-            }
-            return new Response('Offline', { status: 503 });
-          });
+          .catch(() => new Response('Offline', { status: 503 }));
       })
   );
 });
